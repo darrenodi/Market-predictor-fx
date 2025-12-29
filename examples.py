@@ -45,7 +45,7 @@ def example_category_specific():
     # Scrape only crypto news
     print("Scraping cryptocurrency news...")
     stats = scraper.scrape_crypto()
-    print(f"Crypto articles saved: {stats['newsapi']['saved'] + stats['finnhub']['saved']}")
+    print(f"Crypto articles saved: {stats['newsapi']['saved'] + stats['finnhub']['saved'] + stats['cryptopanic']['saved']}")
     
     # Scrape only forex news
     print("\nScraping forex news...")
