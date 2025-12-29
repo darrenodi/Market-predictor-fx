@@ -101,10 +101,19 @@ class NewsAPIScraper:
         Returns:
             NewsArticle instance
         """
-        # Parse published date
-        published_at = datetime.fromisoformat(
-            article['publishedAt'].replace('Z', '+00:00')
-        )
+        # Parse published date with error handling
+        published_at_str = article.get('publishedAt')
+        if not published_at_str:
+            # Default to current time if no publish date provided
+            published_at = datetime.now(timezone.utc)
+        else:
+            try:
+                published_at = datetime.fromisoformat(
+                    published_at_str.replace('Z', '+00:00')
+                )
+            except (ValueError, AttributeError):
+                # Fallback to current time if parsing fails
+                published_at = datetime.now(timezone.utc)
         
         return NewsArticle(
             source='newsapi',

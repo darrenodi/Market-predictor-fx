@@ -38,7 +38,7 @@ class NewsScraper:
         self.session = db_session or get_session()
         
     def save_articles(self, articles: List[NewsArticle]) -> int:
-        """Save articles to database
+        """Save articles to database with batched commits
         
         Args:
             articles: List of NewsArticle objects
@@ -47,8 +47,9 @@ class NewsScraper:
             Number of articles successfully saved
         """
         saved_count = 0
+        batch_size = 100  # Commit every 100 articles for better performance
         
-        for article in articles:
+        for i, article in enumerate(articles):
             try:
                 # Check if article already exists (by URL and published date)
                 existing = self.session.query(NewsArticle).filter_by(
@@ -61,15 +62,25 @@ class NewsScraper:
                     continue
                 
                 self.session.add(article)
-                self.session.commit()
                 saved_count += 1
                 
+                # Commit in batches for better performance
+                if (i + 1) % batch_size == 0:
+                    self.session.commit()
+                    
             except IntegrityError as e:
                 self.session.rollback()
                 logger.warning(f"Integrity error saving article: {str(e)}")
             except Exception as e:
                 self.session.rollback()
                 logger.error(f"Error saving article: {str(e)}")
+        
+        # Final commit for remaining articles
+        try:
+            self.session.commit()
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error in final commit: {str(e)}")
         
         logger.info(f"Saved {saved_count} new articles to database")
         return saved_count

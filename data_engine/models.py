@@ -2,7 +2,7 @@
 Database models for storing news articles
 """
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, DateTime, Text, Float, create_engine
+from sqlalchemy import Column, Integer, String, DateTime, Text, Float, create_engine, Index, UniqueConstraint
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
@@ -27,6 +27,12 @@ class NewsArticle(Base):
     category = Column(String(50))  # stocks, crypto, forex
     symbols = Column(String(500))  # comma-separated list of related symbols
     sentiment = Column(Float)  # optional sentiment score
+    
+    # Add unique constraint to prevent duplicates at database level
+    __table_args__ = (
+        UniqueConstraint('url', 'published_at', name='uix_url_published'),
+        Index('idx_source_category', 'source', 'category'),
+    )
     
     def __repr__(self):
         return f"<NewsArticle(id={self.id}, source={self.source}, headline={self.headline[:50]}...)>"
