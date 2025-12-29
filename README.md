@@ -37,11 +37,12 @@ The goal is to eliminate emotional bias in trading by quantifying news impact. M
 ## 📂 Repository Structure
 ```text
 ├── data_engine/        # ✅ Python scrapers for news and price data
-│   ├── newsapi_scraper.py    # NewsAPI integration
-│   ├── finnhub_scraper.py    # Finnhub integration
-│   ├── scraper.py            # Main orchestrator
-│   ├── models.py             # Database models
-│   └── config.py             # Configuration management
+│   ├── newsapi_scraper.py     # NewsAPI integration
+│   ├── finnhub_scraper.py     # Finnhub integration
+│   ├── cryptopanic_scraper.py # CryptoPanic integration
+│   ├── scraper.py             # Main orchestrator
+│   ├── models.py              # Database models
+│   └── config.py              # Configuration management
 ├── tests/              # ✅ Test suite
 ├── examples.py         # ✅ Usage examples
 └── requirements.txt    # ✅ Project dependencies
@@ -70,11 +71,13 @@ cp .env.example .env
 # Edit .env and add your API keys:
 # NEWS_API_KEY=your_newsapi_key
 # FINNHUB_KEY=your_finnhub_key
+# CRYPTOPANIC_KEY=your_cryptopanic_key
 ```
 
 Get your API keys:
 - **NewsAPI**: https://newsapi.org/register (Free: 100 requests/day)
 - **Finnhub**: https://finnhub.io/register (Free: 60 requests/minute)
+- **CryptoPanic**: https://cryptopanic.com/developers/api/ (Free: 60 requests/minute)
 
 ### 3. Run the Scraper
 
@@ -131,6 +134,7 @@ Create a `.env` file in the root:
 ```env
 NEWS_API_KEY=your_newsapi_key
 FINNHUB_KEY=your_finnhub_key
+CRYPTOPANIC_KEY=your_cryptopanic_key
 BINANCE_SECRET=your_binance_secret
 
 ```
