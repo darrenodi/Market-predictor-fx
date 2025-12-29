@@ -1,14 +1,15 @@
 # Data Engine - News Scraper
 
-This module provides real-time news scraping from NewsAPI and Finnhub APIs for financial market analysis.
+This module provides real-time news scraping from NewsAPI, Finnhub, and CryptoPanic APIs for financial market analysis.
 
 ## Features
 
-- ✅ Connect to NewsAPI and Finnhub APIs
+- ✅ Connect to NewsAPI, Finnhub, and CryptoPanic APIs
 - ✅ Parse and normalize headline data
 - ✅ Store in database with timestamps
 - ✅ Handle API rate limits gracefully
 - ✅ Support for stocks, crypto, and forex categories
+- ✅ Sentiment signals from CryptoPanic
 
 ## Setup
 
@@ -26,6 +27,7 @@ cp .env.example .env
 3. Get API keys:
    - NewsAPI: https://newsapi.org/register
    - Finnhub: https://finnhub.io/register
+   - CryptoPanic: https://cryptopanic.com/developers/api/
 
 ## Usage
 
@@ -67,21 +69,22 @@ scraper.close()
 
 The `news_articles` table stores:
 - `id`: Primary key
-- `source`: 'newsapi' or 'finnhub'
+- `source`: 'newsapi', 'finnhub', or 'cryptopanic'
 - `headline`: Article title
 - `description`: Article description/summary
 - `url`: Article URL
 - `published_at`: Publication timestamp
 - `scraped_at`: When the article was scraped
 - `category`: stocks/crypto/forex/general
-- `symbols`: Related ticker symbols
-- `sentiment`: Optional sentiment score
+- `symbols`: Related ticker symbols (e.g., 'BTC,ETH')
+- `sentiment`: Optional sentiment score (-1 to 1, available from CryptoPanic)
 
 ## Rate Limiting
 
 The scrapers implement rate limiting to respect API quotas:
 - NewsAPI: 100 requests/minute (configurable)
 - Finnhub: 60 requests/minute (configurable)
+- CryptoPanic: 60 requests/minute (configurable, free tier limit)
 
 Rate limits are handled automatically with exponential backoff.
 
@@ -92,9 +95,11 @@ All configuration is managed through environment variables in `.env`:
 ```env
 NEWS_API_KEY=your_key_here
 FINNHUB_KEY=your_key_here
+CRYPTOPANIC_KEY=your_key_here
 DATABASE_URL=sqlite:///./market_predictor.db
 NEWSAPI_RATE_LIMIT=100
 FINNHUB_RATE_LIMIT=60
+CRYPTOPANIC_RATE_LIMIT=60
 SCRAPER_INTERVAL_MINUTES=15
 ```
 
@@ -102,12 +107,13 @@ SCRAPER_INTERVAL_MINUTES=15
 
 ```
 data_engine/
-├── __init__.py          # Package initialization
-├── config.py            # Configuration management
-├── models.py            # Database models (SQLAlchemy)
-├── newsapi_scraper.py   # NewsAPI integration
-├── finnhub_scraper.py   # Finnhub integration
-└── scraper.py           # Main orchestrator
+├── __init__.py              # Package initialization
+├── config.py                # Configuration management
+├── models.py                # Database models (SQLAlchemy)
+├── newsapi_scraper.py       # NewsAPI integration
+├── finnhub_scraper.py       # Finnhub integration
+├── cryptopanic_scraper.py   # CryptoPanic integration
+└── scraper.py               # Main orchestrator
 ```
 
 ## Error Handling

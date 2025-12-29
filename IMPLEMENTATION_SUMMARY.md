@@ -1,11 +1,11 @@
 # News Scraper Implementation Summary
 
 ## Overview
-Successfully implemented a real-time news scraper for the Market Predictor FX project that ingests financial news from NewsAPI and Finnhub APIs.
+Successfully implemented a real-time news scraper for the Market Predictor FX project that ingests financial news from NewsAPI, Finnhub, and CryptoPanic APIs.
 
 ## Acceptance Criteria - All Met ✅
 
-### 1. Connect to NewsAPI and Finnhub APIs ✅
+### 1. Connect to NewsAPI, Finnhub, and CryptoPanic APIs ✅
 - **NewsAPI Integration**: `data_engine/newsapi_scraper.py`
   - Supports general, crypto, and forex news categories
   - Rate limited to 100 requests/minute (configurable)
@@ -16,8 +16,14 @@ Successfully implemented a real-time news scraper for the Market Predictor FX pr
   - Rate limited to 60 requests/minute (configurable)
   - Company-specific news fetching
 
+- **CryptoPanic Integration**: `data_engine/cryptopanic_scraper.py`
+  - Cryptocurrency-specific news and sentiment signals
+  - Rate limited to 60 requests/minute (configurable)
+  - Sentiment analysis from user votes
+  - Support for bullish/bearish/important news filters
+
 ### 2. Parse and Normalize Headline Data ✅
-- Unified `NewsArticle` model for both sources
+- Unified `NewsArticle` model for all sources (NewsAPI, Finnhub, CryptoPanic)
 - Automatic date parsing with fallback handling
 - Consistent field mapping:
   - `headline`: Article title
@@ -26,25 +32,28 @@ Successfully implemented a real-time news scraper for the Market Predictor FX pr
   - `published_at`: Publication timestamp (timezone-aware)
   - `scraped_at`: Scraping timestamp
   - `category`: stocks/crypto/forex/general
-  - `symbols`: Related ticker symbols
+  - `symbols`: Related ticker symbols (e.g., 'BTC,ETH' from CryptoPanic)
+  - `sentiment`: Sentiment score (-1 to 1, available from CryptoPanic votes)
 
 ### 3. Store in Database with Timestamps ✅
 - SQLAlchemy ORM models in `data_engine/models.py`
-- SQLite database (configurable to other databases)
+- SQLite database (configurable to PostgreSQL for production)
 - Indexed columns for efficient queries:
-  - `source` (newsapi/finnhub)
+  - `source` (newsapi/finnhub/cryptopanic)
   - `published_at`
   - Composite index on `source` and `category`
 - Unique constraint on `url` + `published_at` to prevent duplicates
 - Automatic timestamps:
   - `published_at`: When article was published
   - `scraped_at`: When article was scraped
+- Sentiment score storage for CryptoPanic articles
 
 ### 4. Handle API Rate Limits Gracefully ✅
 - `@sleep_and_retry` decorator for automatic retry
 - `@limits` decorator enforces rate limits:
   - NewsAPI: 100 calls per 60 seconds
   - Finnhub: 60 calls per 60 seconds
+  - CryptoPanic: 60 calls per 60 seconds
 - Configurable rate limits via environment variables
 - Proper exception handling and logging
 
@@ -64,8 +73,8 @@ Successfully implemented a real-time news scraper for the Market Predictor FX pr
 ### Testing
 - Unit tests in `tests/test_scraper.py`
 - Integration tests in `test_integration.py`
-- Example usage in `examples.py`
-- All tests passing ✅
+- Example usage in `examples.py` including CryptoPanic sentiment analysis
+- All tests passing ✅ (8/8 tests)
 - No security vulnerabilities ✅
 
 ### Documentation
@@ -85,6 +94,7 @@ Market-predictor-fx/
 │   ├── models.py                # Database models
 │   ├── newsapi_scraper.py       # NewsAPI integration
 │   ├── finnhub_scraper.py       # Finnhub integration
+│   ├── cryptopanic_scraper.py   # CryptoPanic integration
 │   ├── scraper.py               # Main orchestrator
 │   └── README.md                # Detailed documentation
 ├── tests/
@@ -144,7 +154,7 @@ scraper.close()
 ## Dependencies
 
 Core dependencies:
-- `requests>=2.31.0` - HTTP requests
+- `requests>=2.31.0` - HTTP requests (for CryptoPanic API)
 - `python-dotenv>=1.0.0` - Environment configuration
 - `sqlalchemy>=2.0.0` - Database ORM
 - `newsapi-python>=0.2.7` - NewsAPI client
@@ -161,25 +171,29 @@ Environment variables (`.env`):
 ```env
 NEWS_API_KEY=your_newsapi_key
 FINNHUB_KEY=your_finnhub_key
+CRYPTOPANIC_KEY=your_cryptopanic_key
 DATABASE_URL=sqlite:///./market_predictor.db
 NEWSAPI_RATE_LIMIT=100
 FINNHUB_RATE_LIMIT=60
+CRYPTOPANIC_RATE_LIMIT=60
 SCRAPER_INTERVAL_MINUTES=15
 ```
 
 ## Testing Results
 
-✅ All unit tests passing (7/7)
+✅ All unit tests passing (8/8)
 ✅ All integration tests passing (6/6)
 ✅ No security vulnerabilities (CodeQL)
 ✅ No syntax errors
 ✅ Error handling verified
+✅ CryptoPanic integration tested
 
 ## Next Steps for Production
 
 1. **API Keys**: Obtain production API keys
    - NewsAPI: https://newsapi.org/register
    - Finnhub: https://finnhub.io/register
+   - CryptoPanic: https://cryptopanic.com/developers/api/
 
 2. **Database**: Consider upgrading to PostgreSQL for production
    - Better concurrency handling
@@ -196,10 +210,11 @@ SCRAPER_INTERVAL_MINUTES=15
    - Alert on repeated failures
 
 5. **Enhancement Ideas**:
-   - Add sentiment analysis using FinBERT
+   - Add sentiment analysis using FinBERT for NewsAPI and Finnhub articles
    - Implement webhooks for real-time updates
    - Add article deduplication across sources
    - Implement historical data backfill
+   - Use CryptoPanic sentiment signals for trading bias
 
 ## Security Notes
 
