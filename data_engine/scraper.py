@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from .models import NewsArticle, get_session, init_db
 from .newsapi_scraper import NewsAPIScraper
 from .finnhub_scraper import FinnhubScraper
+from .cryptopanic_scraper import CryptoPanicScraper
 from .config import Config
 
 logging.basicConfig(
@@ -25,16 +26,19 @@ class NewsScraper:
     
     def __init__(self, newsapi_key: Optional[str] = None, 
                  finnhub_key: Optional[str] = None,
+                 cryptopanic_key: Optional[str] = None,
                  db_session: Optional[Session] = None):
         """Initialize scrapers
         
         Args:
             newsapi_key: NewsAPI key (optional, uses Config if not provided)
             finnhub_key: Finnhub key (optional, uses Config if not provided)
+            cryptopanic_key: CryptoPanic key (optional, uses Config if not provided)
             db_session: Database session (optional, creates new if not provided)
         """
         self.newsapi_scraper = NewsAPIScraper(api_key=newsapi_key)
         self.finnhub_scraper = FinnhubScraper(api_key=finnhub_key)
+        self.cryptopanic_scraper = CryptoPanicScraper(api_key=cryptopanic_key)
         self.session = db_session or get_session()
         
     def save_articles(self, articles: List[NewsArticle]) -> int:
@@ -101,6 +105,7 @@ class NewsScraper:
         stats = {
             'newsapi': {'total': 0, 'saved': 0},
             'finnhub': {'total': 0, 'saved': 0},
+            'cryptopanic': {'total': 0, 'saved': 0},
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
         
@@ -127,9 +132,20 @@ class NewsScraper:
             except Exception as e:
                 logger.error(f"Error scraping Finnhub ({category}): {str(e)}")
         
+        # Scrape from CryptoPanic (crypto only)
+        if 'crypto' in categories:
+            try:
+                articles = self.cryptopanic_scraper.scrape_and_normalize('crypto')
+                stats['cryptopanic']['total'] += len(articles)
+                saved = self.save_articles(articles)
+                stats['cryptopanic']['saved'] += saved
+            except Exception as e:
+                logger.error(f"Error scraping CryptoPanic: {str(e)}")
+        
         logger.info(f"=== Scraping cycle complete ===")
         logger.info(f"NewsAPI: {stats['newsapi']['saved']}/{stats['newsapi']['total']} saved")
         logger.info(f"Finnhub: {stats['finnhub']['saved']}/{stats['finnhub']['total']} saved")
+        logger.info(f"CryptoPanic: {stats['cryptopanic']['saved']}/{stats['cryptopanic']['total']} saved")
         
         return stats
     
@@ -199,6 +215,9 @@ def main():
         print(f"\nFinnhub:")
         print(f"  Total fetched: {stats['finnhub']['total']}")
         print(f"  Saved to DB: {stats['finnhub']['saved']}")
+        print(f"\nCryptoPanic:")
+        print(f"  Total fetched: {stats['cryptopanic']['total']}")
+        print(f"  Saved to DB: {stats['cryptopanic']['saved']}")
         print("="*60)
         
         # Close scraper
@@ -206,7 +225,7 @@ def main():
         
     except ValueError as e:
         logger.error(f"Configuration error: {str(e)}")
-        logger.error("Please set NEWS_API_KEY and FINNHUB_KEY in your .env file")
+        logger.error("Please set NEWS_API_KEY, FINNHUB_KEY, and CRYPTOPANIC_KEY in your .env file")
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}", exc_info=True)
 

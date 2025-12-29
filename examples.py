@@ -90,7 +90,38 @@ def example_crypto_only():
     for article in articles:
         print(f"• {article.headline}")
         print(f"  Source: {article.source} | Published: {article.published_at}")
+        if article.symbols:
+            print(f"  Symbols: {article.symbols}")
+        if article.sentiment is not None:
+            print(f"  Sentiment: {article.sentiment:.2f}")
         print()
+    
+    scraper.close()
+
+
+def example_cryptopanic_sentiment():
+    """Example: CryptoPanic with sentiment analysis"""
+    print("\n=== Example 5: CryptoPanic Sentiment Analysis ===\n")
+    
+    init_db()
+    scraper = NewsScraper()
+    
+    # Scrape crypto news
+    print("Scraping crypto news with sentiment...")
+    stats = scraper.scrape_crypto()
+    print(f"Total crypto articles: {stats['newsapi']['saved'] + stats['finnhub']['saved'] + stats['cryptopanic']['saved']}")
+    
+    # Get articles with sentiment scores (from CryptoPanic)
+    articles = scraper.get_recent_articles(limit=10, category='crypto')
+    
+    print(f"\nRecent crypto articles with sentiment:\n")
+    for article in articles:
+        if article.source == 'cryptopanic' and article.sentiment is not None:
+            sentiment_str = "Bullish" if article.sentiment > 0 else "Bearish" if article.sentiment < 0 else "Neutral"
+            print(f"• {article.headline[:70]}...")
+            print(f"  Sentiment: {sentiment_str} ({article.sentiment:.2f})")
+            print(f"  Symbols: {article.symbols}")
+            print()
     
     scraper.close()
 
@@ -123,6 +154,7 @@ def main():
         print("2. Category-specific scraping")
         print("3. Retrieve stored articles")
         print("4. Get crypto articles only")
+        print("5. CryptoPanic sentiment analysis")
         print("\nFor this demo, we'll run example 3 (retrieve articles)")
         print("To run others, call the corresponding function.\n")
         

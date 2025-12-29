@@ -13,6 +13,7 @@ class Config:
     # API Keys
     NEWS_API_KEY = os.getenv('NEWS_API_KEY', '')
     FINNHUB_KEY = os.getenv('FINNHUB_KEY', '')
+    CRYPTOPANIC_KEY = os.getenv('CRYPTOPANIC_KEY', '')
     
     # Database
     DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./market_predictor.db')
@@ -20,6 +21,7 @@ class Config:
     # Rate Limits (requests per minute)
     NEWSAPI_RATE_LIMIT = int(os.getenv('NEWSAPI_RATE_LIMIT', '100'))
     FINNHUB_RATE_LIMIT = int(os.getenv('FINNHUB_RATE_LIMIT', '60'))
+    CRYPTOPANIC_RATE_LIMIT = int(os.getenv('CRYPTOPANIC_RATE_LIMIT', '60'))
     
     # Scraper settings
     SCRAPER_INTERVAL_MINUTES = int(os.getenv('SCRAPER_INTERVAL_MINUTES', '15'))
@@ -37,6 +39,8 @@ class Config:
             errors.append("NEWS_API_KEY not set")
         if not cls.FINNHUB_KEY:
             errors.append("FINNHUB_KEY not set")
+        if not cls.CRYPTOPANIC_KEY:
+            errors.append("CRYPTOPANIC_KEY not set")
         
         if errors:
             raise ValueError(f"Configuration errors: {', '.join(errors)}")

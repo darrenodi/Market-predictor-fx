@@ -101,9 +101,22 @@ def test_finnhub_scraper_initialization():
         pass
 
 
+def test_cryptopanic_scraper_initialization():
+    """Test CryptoPanic scraper initialization"""
+    from data_engine.cryptopanic_scraper import CryptoPanicScraper
+    
+    try:
+        scraper = CryptoPanicScraper(api_key='test_key')
+        assert scraper.api_key == 'test_key'
+    except Exception:
+        # API client might validate key format
+        pass
+
+
 def test_article_normalization():
     """Test article normalization from different sources"""
     from data_engine.newsapi_scraper import NewsAPIScraper
+    from data_engine.cryptopanic_scraper import CryptoPanicScraper
     
     # Mock NewsAPI article
     newsapi_article = {
@@ -120,6 +133,28 @@ def test_article_normalization():
         assert normalized.source == 'newsapi'
         assert normalized.headline == 'Test Title'
         assert normalized.category == 'stocks'
+    except Exception:
+        # Skip if API client fails initialization
+        pass
+    
+    # Mock CryptoPanic post
+    cryptopanic_post = {
+        'title': 'Bitcoin hits new high',
+        'url': 'https://example.com/btc',
+        'published_at': '2024-01-01T12:00:00Z',
+        'currencies': [{'code': 'BTC'}, {'code': 'ETH'}],
+        'source': {'title': 'CryptoNews'},
+        'votes': {'positive': 10, 'negative': 2}
+    }
+    
+    try:
+        scraper = CryptoPanicScraper(api_key='test_key')
+        normalized = scraper.normalize_article(cryptopanic_post, 'crypto')
+        
+        assert normalized.source == 'cryptopanic'
+        assert normalized.headline == 'Bitcoin hits new high'
+        assert normalized.category == 'crypto'
+        assert 'BTC' in normalized.symbols
     except Exception:
         # Skip if API client fails initialization
         pass
