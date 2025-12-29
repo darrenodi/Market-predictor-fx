@@ -36,14 +36,78 @@ The goal is to eliminate emotional bias in trading by quantifying news impact. M
 
 ## 📂 Repository Structure
 ```text
-├── api/                # FastAPI backend & ML inference routes
-├── data_engine/        # Python scrapers for news and price data
-├── models/             # ML training scripts (FinBERT + XGBoost)
-├── frontend/           # Next.js web dashboard (moduvise.com)
-├── scripts/            # Data cleaning and impact-labeling utilities
-└── requirements.txt    # Project dependencies
-
+├── data_engine/        # ✅ Python scrapers for news and price data
+│   ├── newsapi_scraper.py    # NewsAPI integration
+│   ├── finnhub_scraper.py    # Finnhub integration
+│   ├── scraper.py            # Main orchestrator
+│   ├── models.py             # Database models
+│   └── config.py             # Configuration management
+├── tests/              # ✅ Test suite
+├── examples.py         # ✅ Usage examples
+└── requirements.txt    # ✅ Project dependencies
 ```
+
+**Status**: Real-time news scraper is now implemented! ✅
+
+---
+
+## 🚀 Quick Start: News Scraper
+
+### 1. Clone & Setup
+
+```bash
+git clone https://github.com/darrenodi/Market-predictor-fx.git
+cd Market-predictor-fx
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 2. Configure API Keys
+
+```bash
+cp .env.example .env
+# Edit .env and add your API keys:
+# NEWS_API_KEY=your_newsapi_key
+# FINNHUB_KEY=your_finnhub_key
+```
+
+Get your API keys:
+- **NewsAPI**: https://newsapi.org/register (Free: 100 requests/day)
+- **Finnhub**: https://finnhub.io/register (Free: 60 requests/minute)
+
+### 3. Run the Scraper
+
+```bash
+# Run the scraper
+python -m data_engine.scraper
+
+# Or use the examples
+python examples.py
+```
+
+### 4. Use in Your Code
+
+```python
+from data_engine.scraper import NewsScraper
+from data_engine.models import init_db
+
+# Initialize database
+init_db()
+
+# Create scraper and fetch news
+scraper = NewsScraper()
+stats = scraper.scrape_all()
+
+# Get recent articles
+articles = scraper.get_recent_articles(limit=50, category='crypto')
+for article in articles:
+    print(f"{article.headline} - {article.published_at}")
+
+scraper.close()
+```
+
+See [data_engine/README.md](data_engine/README.md) for detailed documentation.
 
 ---
 
