@@ -1,7 +1,16 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import { MarketData } from '@/types'
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
+
+// Free tier models in preference order — falls through on quota / rate-limit errors
+const MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-3.0-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-2.0-flash',
+]
 
 export interface GeneratedSignal {
   symbol: string
@@ -23,13 +32,15 @@ function buildPrompt(assets: MarketData[]): string {
           ? a.news.map(n => `  • ${n.title}: ${n.description}`).join('\n')
           : '  • No recent news'
 
-      const priceFmt =
-        a.price < 1 ? a.price.toFixed(6) : a.price.toLocaleString('en-US', { minimumFractionDigits: 2 })
-
       const whaleLine =
         a.whales.length > 0
           ? a.whales.map(w => `  • ${w.title}`).join('\n')
           : '  • No large transactions detected'
+
+      const priceFmt =
+        a.price < 1
+          ? a.price.toFixed(6)
+          : a.price.toLocaleString('en-US', { minimumFractionDigits: 2 })
 
       return `${a.symbol}
   Price : $${priceFmt}
@@ -41,7 +52,7 @@ ${whaleLine}`
     })
     .join('\n\n')
 
-  return `You are a professional derivatives trading analyst. Analyse the market data and news below, then produce precise trading signals for each asset.
+  return `You are a professional derivatives trading analyst. Analyse the market data, news, and whale transactions below, then produce precise trading signals for each asset.
 
 ${assetBlocks}
 
@@ -51,7 +62,7 @@ Rules:
 - portfolio_pct: 3-7 (how much of portfolio to allocate, in %)
 - tp/sl: set based on recent volatility — typically 0.5-2% from entry for crypto, 0.3-0.8% for gold
 - confidence: 0.0 to 1.0
-- reasoning: one sentence max
+- reasoning: one sentence max, factor in whale moves if significant
 
 Respond with ONLY valid JSON — no markdown, no extra text:
 {
@@ -65,23 +76,49 @@ Respond with ONLY valid JSON — no markdown, no extra text:
       "sl": 77000,
       "market_price": 78000,
       "confidence": 0.75,
-      "reasoning": "Positive ETF inflow news supports upward momentum."
+      "reasoning": "Positive ETF inflow news and large exchange outflow signal accumulation."
     }
   ]
 }`
 }
 
+function isRateLimitError(err: unknown): boolean {
+  const msg = String(err).toLowerCase()
+  return (
+    msg.includes('429') ||
+    msg.includes('quota') ||
+    msg.includes('rate limit') ||
+    msg.includes('resource exhausted') ||
+    msg.includes('too many requests')
+  )
+}
+
 export async function generateSignals(assets: MarketData[]): Promise<GeneratedSignal[]> {
-  const message = await client.messages.create({
-    model: 'claude-opus-4-7',
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: buildPrompt(assets) }],
-  })
+  const prompt = buildPrompt(assets)
+  let lastError: unknown
 
-  const text = message.content[0].type === 'text' ? message.content[0].text : ''
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error('Claude returned no JSON')
+  for (const modelId of MODELS) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelId })
+      const result = await model.generateContent(prompt)
+      const text = result.response.text()
 
-  const parsed = JSON.parse(jsonMatch[0]) as { signals: GeneratedSignal[] }
-  return parsed.signals
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) throw new Error(`${modelId} returned no JSON`)
+
+      const parsed = JSON.parse(jsonMatch[0]) as { signals: GeneratedSignal[] }
+      console.log(`[signals] generated with ${modelId}`)
+      return parsed.signals
+    } catch (err) {
+      lastError = err
+      if (isRateLimitError(err)) {
+        console.warn(`[signals] ${modelId} rate limited, trying next model`)
+        continue
+      }
+      // Non-rate-limit errors (bad JSON, model error) — still try next
+      console.warn(`[signals] ${modelId} failed: ${err}, trying next model`)
+    }
+  }
+
+  throw new Error(`All Gemini models failed. Last error: ${lastError}`)
 }
