@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import { BarChart2, GitCompare, Briefcase, Bell, Newspaper, Settings, Plus, LogOut } from 'lucide-react'
 
 const NAV_ITEMS = [
@@ -9,37 +10,13 @@ const NAV_ITEMS = [
   { icon: Settings, label: 'Settings' },
 ]
 
-function ModuViseLogo() {
-  return (
-    <svg width="34" height="34" viewBox="0 0 34 34" fill="none">
-      <rect width="34" height="34" rx="7" fill="#16a34a" />
-      {/* Double-check / M shape */}
-      <path
-        d="M5 21 L9 25 L15 14"
-        stroke="white"
-        strokeWidth="2.5"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M14 21 L18 25 L29 12"
-        stroke="white"
-        strokeWidth="2.5"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
 
 export default function Sidebar() {
   return (
     <aside className="hidden lg:flex w-52 min-w-[208px] bg-[#0a1525] border-r border-[#1e3a5f] flex-col h-full">
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5">
-        <ModuViseLogo />
+        <Image src="/logo.png" alt="ModuVise" width={34} height={34} className="rounded-lg" />
         <span className="font-bold text-white text-lg tracking-wide">ModuVise</span>
       </div>
 

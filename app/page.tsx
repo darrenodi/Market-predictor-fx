@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Image from 'next/image'
 import { Bell, Settings, User } from 'lucide-react'
 import Sidebar from '@/components/Sidebar'
 import AssetCard from '@/components/AssetCard'
@@ -9,15 +10,6 @@ import { Signal, PriceInfo } from '@/types'
 
 type PriceMap = Record<string, PriceInfo>
 
-function MobileLogo() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 34 34" fill="none">
-      <rect width="34" height="34" rx="7" fill="#16a34a" />
-      <path d="M5 21 L9 25 L15 14" stroke="white" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M14 21 L18 25 L29 12" stroke="white" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
 
 export default function Dashboard() {
   const [signals, setSignals] = useState<Signal[]>([])
@@ -62,7 +54,7 @@ export default function Dashboard() {
         {/* ── Mobile header ── */}
         <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-[#0a1525] border-b border-[#1e3a5f] shrink-0">
           <div className="flex items-center gap-2.5">
-            <MobileLogo />
+            <Image src="/logo.png" alt="ModuVise" width={28} height={28} className="rounded-lg" />
             <span className="font-bold text-white text-base tracking-wide">ModuVise</span>
           </div>
           <button className="p-2 text-gray-400">
