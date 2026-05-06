@@ -35,4 +35,5 @@ export interface MarketData {
   price: number
   change_24h: number
   news: Array<{ title: string; description: string }>
+  whales: Array<{ title: string }>
 }

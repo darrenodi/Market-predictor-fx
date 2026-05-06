@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { fetchAllPrices } from '@/lib/prices'
-import { fetchAllNews } from '@/lib/news'
+import { fetchAllNews, fetchWhaleAlerts } from '@/lib/news'
 import { generateSignals } from '@/lib/signals'
 import { notifyNewSignal } from '@/lib/telegram'
 
@@ -27,10 +27,11 @@ export async function GET(req: NextRequest) {
 
     const symbols = ['BTC', 'ETH', 'XAU', memeCoin]
 
-    // Parallel: prices + news
-    const [prices, news] = await Promise.all([
+    // Parallel: prices + news + whale alerts
+    const [prices, news, whaleAlerts] = await Promise.all([
       fetchAllPrices(memeCoin),
       fetchAllNews(symbols),
+      fetchWhaleAlerts(),
     ])
 
     // Build MarketData array for Claude
@@ -40,6 +41,7 @@ export async function GET(req: NextRequest) {
         price: prices[s]?.price ?? 0,
         change_24h: prices[s]?.change_24h ?? 0,
         news: news[s] ?? [],
+        whales: whaleAlerts.filter(w => w.symbol === s),
       }))
       .filter(d => d.price > 0)
 

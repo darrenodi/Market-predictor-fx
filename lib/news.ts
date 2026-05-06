@@ -15,6 +15,10 @@ const FINANCE_FEEDS = [
   'https://www.kitco.com/rss/metals.rss',
 ]
 
+const WHALE_FEEDS = [
+  'https://whale-alert.io/rss',
+]
+
 const SEARCH_TERMS: Record<string, string[]> = {
   BTC: ['bitcoin', 'btc'],
   ETH: ['ethereum', 'eth'],
@@ -32,6 +36,11 @@ interface FeedItem {
   title: string
   description: string
   source: string
+}
+
+export interface WhaleAlert {
+  title: string
+  symbol: string
 }
 
 async function parseFeed(url: string): Promise<Parser.Output<Record<string, unknown>>> {
@@ -80,4 +89,28 @@ export async function fetchAllNews(
       .filter(r => r.status === 'fulfilled')
       .map(r => (r as PromiseFulfilledResult<readonly [string, FeedItem[]]>).value),
   )
+}
+
+export async function fetchWhaleAlerts(limit = 10): Promise<WhaleAlert[]> {
+  const results: WhaleAlert[] = []
+
+  const settled = await Promise.allSettled(WHALE_FEEDS.map(url => parser.parseURL(url)))
+
+  for (const result of settled) {
+    if (result.status !== 'fulfilled') continue
+    for (const item of result.value.items ?? []) {
+      const title = item.title ?? ''
+      if (!title) continue
+
+      // Extract symbol from whale alert title (e.g. "#BTC", "#ETH")
+      const match = title.match(/#([A-Z]{2,6})/)
+      const symbol = match ? match[1] : 'UNKNOWN'
+
+      results.push({ title, symbol })
+      if (results.length >= limit) break
+    }
+    if (results.length >= limit) break
+  }
+
+  return results
 }

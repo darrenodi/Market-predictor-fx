@@ -26,11 +26,18 @@ function buildPrompt(assets: MarketData[]): string {
       const priceFmt =
         a.price < 1 ? a.price.toFixed(6) : a.price.toLocaleString('en-US', { minimumFractionDigits: 2 })
 
+      const whaleLine =
+        a.whales.length > 0
+          ? a.whales.map(w => `  • ${w.title}`).join('\n')
+          : '  • No large transactions detected'
+
       return `${a.symbol}
   Price : $${priceFmt}
   24h   : ${a.change_24h >= 0 ? '+' : ''}${a.change_24h.toFixed(2)}%
   News  :
-${newsLines}`
+${newsLines}
+  Whale Transactions (large on-chain moves) :
+${whaleLine}`
     })
     .join('\n\n')
 
