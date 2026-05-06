@@ -1,18 +1,16 @@
 import Parser from 'rss-parser'
 
-const parser = new Parser({ timeout: 8000 })
+const parser = new Parser({ timeout: 4000 })
 
-// Free RSS feeds — no API keys required
 const CRYPTO_FEEDS = [
   'https://cointelegraph.com/rss',
   'https://feeds.coindesk.com/rss/news',
   'https://decrypt.co/feed',
-  'https://cryptonews.com/news/feed/',
 ]
 
 const FINANCE_FEEDS = [
-  'https://feeds.marketwatch.com/marketwatch/topstories/',
   'https://www.kitco.com/rss/metals.rss',
+  'https://feeds.marketwatch.com/marketwatch/topstories/',
 ]
 
 const WHALE_FEEDS = [
@@ -43,74 +41,63 @@ export interface WhaleAlert {
   symbol: string
 }
 
-async function parseFeed(url: string): Promise<Parser.Output<Record<string, unknown>>> {
-  return parser.parseURL(url)
+type ParsedFeed = { items: Array<{ title?: string; contentSnippet?: string }>; title?: string }
+
+async function fetchFeedWithTimeout(url: string): Promise<ParsedFeed | null> {
+  try {
+    return await parser.parseURL(url) as ParsedFeed
+  } catch {
+    return null
+  }
 }
 
-export async function fetchNewsForSymbol(symbol: string, limit = 5): Promise<FeedItem[]> {
-  const terms = SEARCH_TERMS[symbol.toUpperCase()] ?? [symbol.toLowerCase()]
-  const feeds = symbol === 'XAU' ? FINANCE_FEEDS : CRYPTO_FEEDS
-  const results: FeedItem[] = []
+export async function fetchAllNews(symbols: string[]): Promise<Record<string, FeedItem[]>> {
+  const needsFinance = symbols.includes('XAU')
+  const allFeeds = [...CRYPTO_FEEDS, ...(needsFinance ? FINANCE_FEEDS : [])]
 
-  const settled = await Promise.allSettled(feeds.map(url => parseFeed(url)))
+  // Fetch every feed once in parallel
+  const fetched = await Promise.all(allFeeds.map(url => fetchFeedWithTimeout(url)))
 
-  for (const result of settled) {
-    if (result.status !== 'fulfilled') continue
-    const feed = result.value
+  const result: Record<string, FeedItem[]> = {}
 
-    for (const item of feed.items ?? []) {
-      const text = `${item.title ?? ''} ${item.contentSnippet ?? ''}`.toLowerCase()
-      if (!terms.some(t => text.includes(t))) continue
+  for (const symbol of symbols) {
+    const terms = SEARCH_TERMS[symbol.toUpperCase()] ?? [symbol.toLowerCase()]
+    const feeds = symbol === 'XAU'
+      ? fetched.slice(CRYPTO_FEEDS.length)
+      : fetched.slice(0, CRYPTO_FEEDS.length)
 
-      results.push({
-        title: item.title ?? '',
-        description: (item.contentSnippet ?? '').slice(0, 250),
-        source: feed.title ?? '',
-      })
-
-      if (results.length >= limit) break
+    const items: FeedItem[] = []
+    for (const feed of feeds) {
+      if (!feed) continue
+      for (const item of feed.items) {
+        const text = `${item.title ?? ''} ${item.contentSnippet ?? ''}`.toLowerCase()
+        if (!terms.some(t => text.includes(t))) continue
+        items.push({
+          title: item.title ?? '',
+          description: (item.contentSnippet ?? '').slice(0, 200),
+          source: feed.title ?? '',
+        })
+        if (items.length >= 4) break
+      }
+      if (items.length >= 4) break
     }
-
-    if (results.length >= limit) break
+    result[symbol] = items
   }
 
-  return results
+  return result
 }
 
-export async function fetchAllNews(
-  symbols: string[],
-): Promise<Record<string, FeedItem[]>> {
-  const entries = await Promise.allSettled(
-    symbols.map(async s => [s, await fetchNewsForSymbol(s)] as const),
-  )
+export async function fetchWhaleAlerts(limit = 8): Promise<WhaleAlert[]> {
+  const feed = await fetchFeedWithTimeout(WHALE_FEEDS[0])
+  if (!feed) return []
 
-  return Object.fromEntries(
-    entries
-      .filter(r => r.status === 'fulfilled')
-      .map(r => (r as PromiseFulfilledResult<readonly [string, FeedItem[]]>).value),
-  )
-}
-
-export async function fetchWhaleAlerts(limit = 10): Promise<WhaleAlert[]> {
   const results: WhaleAlert[] = []
-
-  const settled = await Promise.allSettled(WHALE_FEEDS.map(url => parser.parseURL(url)))
-
-  for (const result of settled) {
-    if (result.status !== 'fulfilled') continue
-    for (const item of result.value.items ?? []) {
-      const title = item.title ?? ''
-      if (!title) continue
-
-      // Extract symbol from whale alert title (e.g. "#BTC", "#ETH")
-      const match = title.match(/#([A-Z]{2,6})/)
-      const symbol = match ? match[1] : 'UNKNOWN'
-
-      results.push({ title, symbol })
-      if (results.length >= limit) break
-    }
+  for (const item of feed.items) {
+    const title = item.title ?? ''
+    if (!title) continue
+    const match = title.match(/#([A-Z]{2,6})/)
+    results.push({ title, symbol: match ? match[1] : 'UNKNOWN' })
     if (results.length >= limit) break
   }
-
   return results
 }
