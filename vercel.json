@@ -1,12 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/update-signals",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/cron/check-prices",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}
+{}
