@@ -36,7 +36,7 @@ function ModuViseLogo() {
 
 export default function Sidebar() {
   return (
-    <aside className="w-52 min-w-[208px] bg-[#0a1525] border-r border-[#1e3a5f] flex flex-col h-full">
+    <aside className="hidden lg:flex w-52 min-w-[208px] bg-[#0a1525] border-r border-[#1e3a5f] flex-col h-full">
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5">
         <ModuViseLogo />

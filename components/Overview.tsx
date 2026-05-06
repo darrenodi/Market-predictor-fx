@@ -65,7 +65,7 @@ export default function Overview({ signals, loading }: Props) {
     return (
       <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-5 animate-pulse">
         <div className="h-5 w-24 bg-[#1e3a5f] rounded mb-4" />
-        <div className="grid grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           {[1, 2, 3, 4, 5, 6].map(i => (
             <div key={i} className="space-y-2">
               <div className="h-3 w-20 bg-[#1e3a5f] rounded" />
@@ -95,7 +95,7 @@ export default function Overview({ signals, loading }: Props) {
   return (
     <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-5">
       <h2 className="text-white font-semibold mb-4">Overview</h2>
-      <div className="grid grid-cols-6 gap-4 items-center">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 items-center">
         <div>
           <p className="text-xs text-gray-400 mb-1">Total Portfolio Size</p>
           <p className="text-white font-bold">${fmt(PORTFOLIO_BALANCE)}</p>
