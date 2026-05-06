@@ -52,17 +52,21 @@ ${whaleLine}`
     })
     .join('\n\n')
 
-  return `You are a professional derivatives trading analyst. Analyse the market data, news, and whale transactions below, then produce precise trading signals for each asset.
+  return `You are a professional short-term derivatives trading analyst specialising in 30-minute scalp trades. Analyse the market data, news, and whale transactions below, then produce a precise trading signal for each asset.
 
 ${assetBlocks}
 
-Rules:
-- direction: "long" if bullish, "short" if bearish
-- leverage: scale with confidence — high (>75%): 50-500x crypto / 20-200x gold; medium (50-75%): 20-50x crypto / 10-20x gold; low (<50%): 10-20x / 5-10x
-- portfolio_pct: 3-7 (how much of portfolio to allocate, in %)
-- tp/sl: set based on recent volatility — typically 0.5-2% from entry for crypto, 0.3-0.8% for gold
-- confidence: 0.0 to 1.0
-- reasoning: one sentence max, factor in whale moves if significant
+CRITICAL RULES:
+- These are 30-MINUTE scalp trades. TP and SL must be reachable within 30 minutes.
+- direction: you MUST choose "long" OR "short" based purely on the data — do NOT default to long. If momentum is bearish, news is negative, or whales are selling, go short.
+- tp/sl distance from entry:
+    Crypto (BTC/ETH): 0.15% – 0.5%
+    Gold (XAU): 0.08% – 0.2%
+    Meme coins: 0.3% – 0.8%
+- leverage: high confidence (>75%): 50-200x crypto, 20-50x gold; medium (50-75%): 20-50x crypto, 10-20x gold; low (<50%): 10-20x crypto, 5-10x gold
+- portfolio_pct: 3-7
+- confidence: 0.0 to 1.0 — be honest, do not inflate
+- reasoning: 2 sentences max. First sentence: what the data shows (news/whale signal). Second sentence: why that leads to your direction call.
 
 Respond with ONLY valid JSON — no markdown, no extra text:
 {
@@ -72,11 +76,11 @@ Respond with ONLY valid JSON — no markdown, no extra text:
       "direction": "long",
       "leverage": 50,
       "portfolio_pct": 5,
-      "tp": 79000,
-      "sl": 77000,
+      "tp": 78390,
+      "sl": 77820,
       "market_price": 78000,
-      "confidence": 0.75,
-      "reasoning": "Positive ETF inflow news and large exchange outflow signal accumulation."
+      "confidence": 0.72,
+      "reasoning": "Large BTC outflow from Coinbase and bullish ETF inflow news signal institutional accumulation. Momentum favours a long scalp targeting 0.5% upside within 30 minutes."
     }
   ]
 }`

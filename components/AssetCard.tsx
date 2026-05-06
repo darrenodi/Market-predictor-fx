@@ -110,6 +110,14 @@ export default function AssetCard({ symbol, signal, currentPrice, change24h, pri
         <p className="text-xs text-gray-500">Waiting for signal…</p>
       )}
 
+      {/* Rationale */}
+      {signal?.reasoning && (
+        <div className="bg-[#0a1a2e] border border-[#1e3a5f] rounded-lg px-3 py-2.5">
+          <p className="text-xs text-[#22c55e] font-semibold mb-1">AI Rationale</p>
+          <p className="text-xs text-gray-300 leading-relaxed">{signal.reasoning}</p>
+        </div>
+      )}
+
       {/* Market Price + sparkline */}
       <div>
         <p className="text-xs text-gray-400 mb-1">Market Price</p>
