@@ -24,23 +24,24 @@ export interface GeneratedSignal {
   reasoning: string
 }
 
-function formatIndicators(ind: TechnicalIndicators | null, price: number): string {
+// Plain number formatter — NO commas, no locale formatting (commas confuse the AI)
+function plain(n: number): string {
+  if (n < 0.0001) return n.toFixed(8)
+  if (n < 1) return n.toFixed(6)
+  return n.toFixed(2)
+}
+
+function formatIndicators(ind: TechnicalIndicators | null): string {
   if (!ind) return '  Technicals: insufficient data'
-  const p = (n: number) => (n >= 0 ? '+' : '') + n.toFixed(3) + '%'
+  const pct = (n: number) => (n >= 0 ? '+' : '') + n.toFixed(3) + '%'
   const nearHigh = ind.distFromHigh > -0.5
   const nearLow = ind.distFromLow < 0.5
-  const levelWarning = nearHigh
-    ? '⚠ Price near 24h HIGH — likely resistance'
-    : nearLow
-    ? '⚠ Price near 24h LOW — likely support'
-    : ''
   return `  Technicals:
-    24h High : $${ind.high24h.toLocaleString('en-US', { minimumFractionDigits: 2 })} (${p(ind.distFromHigh)} from here) ${nearHigh ? '← RESISTANCE' : ''}
-    24h Low  : $${ind.low24h.toLocaleString('en-US', { minimumFractionDigits: 2 })} (${p(ind.distFromLow)} from here) ${nearLow ? '← SUPPORT' : ''}
-    4h SMA   : $${ind.sma4h.toLocaleString('en-US', { minimumFractionDigits: 2 })} (price is ${p(ind.priceVsSma)} vs SMA → trend: ${ind.trend.toUpperCase()})
-    Momentum : 1h ${p(ind.momentum1h)} | 4h ${p(ind.momentum4h)}
-    Avg hourly volatility: ${ind.avgHourlyVol.toFixed(3)}% (use this to calibrate TP/SL)
-    ${levelWarning}`
+    24h High : ${plain(ind.high24h)} (${pct(ind.distFromHigh)} from here)${nearHigh ? ' ← RESISTANCE' : ''}
+    24h Low  : ${plain(ind.low24h)} (${pct(ind.distFromLow)} from here)${nearLow ? ' ← SUPPORT' : ''}
+    4h SMA   : ${plain(ind.sma4h)} (price is ${pct(ind.priceVsSma)} vs SMA → trend: ${ind.trend.toUpperCase()})
+    Momentum : 1h ${pct(ind.momentum1h)} | 4h ${pct(ind.momentum4h)}
+    Avg hourly volatility: ${ind.avgHourlyVol.toFixed(3)}% (calibrate TP/SL to this)`
 }
 
 function buildPrompt(assets: MarketData[]): string {
@@ -56,24 +57,21 @@ function buildPrompt(assets: MarketData[]): string {
           ? a.whales.map(w => `  • ${w.title}`).join('\n')
           : '  • No large transactions detected'
 
-      const priceFmt = (n: number) =>
-        n < 1 ? n.toFixed(6) : n.toLocaleString('en-US', { minimumFractionDigits: 2 })
-
       let prevBlock = '  Previous signal: None'
       if (a.currentSignal) {
         const s = a.currentSignal
         const pnlPct = ((a.price - s.entry) / s.entry) * 100 * (s.direction === 'long' ? 1 : -1)
         const distToTp = Math.abs(((s.tp - a.price) / a.price) * 100).toFixed(3)
         const distToSl = Math.abs(((s.sl - a.price) / a.price) * 100).toFixed(3)
-        prevBlock = `  Previous signal (${s.ageMinutes} min ago): ${s.direction.toUpperCase()} @ $${priceFmt(s.entry)}
-  TP: $${priceFmt(s.tp)} (${distToTp}% away) | SL: $${priceFmt(s.sl)} (${distToSl}% away)
+        prevBlock = `  Previous signal (${s.ageMinutes} min ago): ${s.direction.toUpperCase()} @ ${plain(s.entry)}
+  TP: ${plain(s.tp)} (${distToTp}% away) | SL: ${plain(s.sl)} (${distToSl}% away)
   Current P&L: ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(3)}% — trade is ${pnlPct >= 0 ? 'WINNING' : 'LOSING'}`
       }
 
-      const techBlock = formatIndicators(a.indicators, a.price)
+      const techBlock = formatIndicators(a.indicators)
 
       return `${a.symbol}
-  Price    : $${priceFmt(a.price)}
+  Price    : ${plain(a.price)}
   24h      : ${a.change_24h >= 0 ? '+' : ''}${a.change_24h.toFixed(2)}%
 ${techBlock}
 ${prevBlock}
@@ -148,8 +146,20 @@ export async function generateSignals(assets: MarketData[]): Promise<GeneratedSi
       if (!jsonMatch) throw new Error(`${modelId} returned no JSON`)
 
       const parsed = JSON.parse(jsonMatch[0]) as { signals: GeneratedSignal[] }
-      console.log(`[signals] generated with ${modelId}`)
-      return parsed.signals
+
+      // Sanity check: TP and SL must be within 5% of market price and on the correct side
+      const validated = parsed.signals.filter(sig => {
+        const tpDev = Math.abs((sig.tp - sig.market_price) / sig.market_price)
+        const slDev = Math.abs((sig.sl - sig.market_price) / sig.market_price)
+        const tpCorrectSide = sig.direction === 'long' ? sig.tp > sig.market_price : sig.tp < sig.market_price
+        const slCorrectSide = sig.direction === 'long' ? sig.sl < sig.market_price : sig.sl > sig.market_price
+        const ok = tpDev <= 0.05 && slDev <= 0.05 && tpCorrectSide && slCorrectSide
+        if (!ok) console.warn(`[signals] Dropped ${sig.symbol}: invalid TP/SL (price=${sig.market_price}, tp=${sig.tp}, sl=${sig.sl})`)
+        return ok
+      })
+
+      console.log(`[signals] generated ${validated.length}/${parsed.signals.length} valid signals with ${modelId}`)
+      return validated
     } catch (err) {
       lastError = err
       if (isRateLimitError(err)) {
