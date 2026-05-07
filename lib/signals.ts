@@ -103,19 +103,23 @@ RULES:
 - confidence: 0.0–1.0, honest — low if technicals and news conflict
 - reasoning: 2 sentences. Sentence 1: structure/momentum reading. Sentence 2: news/whale confluence and final direction rationale.
 
+IMPORTANT: tp, sl, and market_price must be the actual price in USD with no scaling errors.
+  If an asset trades at 2344.00, a valid tp might be 2355.00 — NOT 23550.00 or 235500.00.
+  Always double-check: |tp - market_price| / market_price must be less than 5%.
+
 Respond with ONLY valid JSON — no markdown, no extra text:
 {
   "signals": [
     {
-      "symbol": "BTC/USD",
+      "symbol": "ASSET/USD",
       "direction": "long",
       "leverage": 50,
       "portfolio_pct": 5,
-      "tp": 78390,
-      "sl": 77820,
-      "market_price": 78000,
+      "tp": 2355.00,
+      "sl": 2330.00,
+      "market_price": 2344.00,
       "confidence": 0.72,
-      "reasoning": "Whale outflows from exchanges continue and ETF inflow news remains positive. Maintaining long as price is 0.2% from TP with no material change in conditions."
+      "reasoning": "Price is above 4h SMA with positive momentum, away from resistance. News confirms bullish bias, supporting a long scalp with 0.47% TP target."
     }
   ]
 }`
@@ -147,16 +151,40 @@ export async function generateSignals(assets: MarketData[]): Promise<GeneratedSi
 
       const parsed = JSON.parse(jsonMatch[0]) as { signals: GeneratedSignal[] }
 
-      // Sanity check: TP and SL must be within 5% of market price and on the correct side
-      const validated = parsed.signals.filter(sig => {
-        const tpDev = Math.abs((sig.tp - sig.market_price) / sig.market_price)
-        const slDev = Math.abs((sig.sl - sig.market_price) / sig.market_price)
-        const tpCorrectSide = sig.direction === 'long' ? sig.tp > sig.market_price : sig.tp < sig.market_price
-        const slCorrectSide = sig.direction === 'long' ? sig.sl < sig.market_price : sig.sl > sig.market_price
-        const ok = tpDev <= 0.05 && slDev <= 0.05 && tpCorrectSide && slCorrectSide
-        if (!ok) console.warn(`[signals] Dropped ${sig.symbol}: invalid TP/SL (price=${sig.market_price}, tp=${sig.tp}, sl=${sig.sl})`)
-        return ok
-      })
+      // Sanity check + auto-scale: TP/SL must be within 5% of price on the correct side
+      const validated = parsed.signals
+        .map(sig => {
+          let { tp, sl } = sig
+          const price = sig.market_price
+
+          // Try dividing by 10 or 100 if values are wildly off scale
+          for (const divisor of [10, 100]) {
+            const tpOk = Math.abs((tp - price) / price) <= 0.05
+            const slOk = Math.abs((sl - price) / price) <= 0.05
+            if (tpOk && slOk) break
+            const tpScaled = tp / divisor
+            const slScaled = sl / divisor
+            if (Math.abs((tpScaled - price) / price) <= 0.05 && Math.abs((slScaled - price) / price) <= 0.05) {
+              console.warn(`[signals] Auto-scaled ${sig.symbol} TP/SL by ÷${divisor} (was tp=${tp}, sl=${sl})`)
+              tp = tpScaled
+              sl = slScaled
+              break
+            }
+          }
+
+          const tpDev = Math.abs((tp - price) / price)
+          const slDev = Math.abs((sl - price) / price)
+          const tpCorrectSide = sig.direction === 'long' ? tp > price : tp < price
+          const slCorrectSide = sig.direction === 'long' ? sl < price : sl > price
+
+          if (tpDev > 0.05 || slDev > 0.05 || !tpCorrectSide || !slCorrectSide) {
+            console.warn(`[signals] Dropped ${sig.symbol}: unfixable TP/SL (price=${price}, tp=${tp}, sl=${sl})`)
+            return null
+          }
+
+          return { ...sig, tp, sl }
+        })
+        .filter((s): s is GeneratedSignal => s !== null)
 
       console.log(`[signals] generated ${validated.length}/${parsed.signals.length} valid signals with ${modelId}`)
       return validated
