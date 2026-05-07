@@ -41,7 +41,7 @@ export interface WhaleAlert {
   symbol: string
 }
 
-type ParsedFeed = { items: Array<{ title?: string; contentSnippet?: string }>; title?: string }
+type ParsedFeed = { items: Array<{ title?: string; contentSnippet?: string; pubDate?: string }>; title?: string }
 
 async function fetchFeedWithTimeout(url: string): Promise<ParsedFeed | null> {
   try {
@@ -58,6 +58,7 @@ export async function fetchAllNews(symbols: string[]): Promise<Record<string, Fe
   // Fetch every feed once in parallel
   const fetched = await Promise.all(allFeeds.map(url => fetchFeedWithTimeout(url)))
 
+  const TWO_HOURS_AGO = Date.now() - 2 * 60 * 60 * 1000
   const result: Record<string, FeedItem[]> = {}
 
   for (const symbol of symbols) {
@@ -70,6 +71,11 @@ export async function fetchAllNews(symbols: string[]): Promise<Record<string, Fe
     for (const feed of feeds) {
       if (!feed) continue
       for (const item of feed.items) {
+        // Skip articles older than 2 hours if pubDate is available
+        if (item.pubDate) {
+          const pubTime = new Date(item.pubDate).getTime()
+          if (pubTime < TWO_HOURS_AGO) continue
+        }
         const text = `${item.title ?? ''} ${item.contentSnippet ?? ''}`.toLowerCase()
         if (!terms.some(t => text.includes(t))) continue
         items.push({

@@ -28,8 +28,10 @@ export interface TechnicalIndicators {
   trend: 'up' | 'down' | 'sideways'
 }
 
+// With 5-min candles over 24h we get ~288 points
+// pts: 6=30m, 12=1h, 24=2h, 48=4h
 export function computeIndicators(history: number[], currentPrice: number): TechnicalIndicators | null {
-  if (history.length < 5) return null
+  if (history.length < 12) return null
 
   const prices = [...history, currentPrice]
   const n = prices.length
@@ -40,19 +42,22 @@ export function computeIndicators(history: number[], currentPrice: number): Tech
   const distFromHigh = ((currentPrice - high24h) / high24h) * 100
   const distFromLow = ((currentPrice - low24h) / low24h) * 100
 
-  const last5 = prices.slice(-5)
-  const sma4h = last5.reduce((a, b) => a + b, 0) / last5.length
+  // 1h SMA (last 12 × 5min points)
+  const last12 = prices.slice(-12)
+  const sma4h = last12.reduce((a, b) => a + b, 0) / last12.length
   const priceVsSma = ((currentPrice - sma4h) / sma4h) * 100
 
-  const price1hAgo = prices[n - 2] ?? currentPrice
-  const price4hAgo = prices[n - 5] ?? currentPrice
-  const momentum1h = ((currentPrice - price1hAgo) / price1hAgo) * 100
-  const momentum4h = ((currentPrice - price4hAgo) / price4hAgo) * 100
+  // Momentum: 30min ago (6 points back) and 1h ago (12 points back)
+  const price30mAgo = prices[Math.max(0, n - 7)] ?? currentPrice
+  const price1hAgo  = prices[Math.max(0, n - 13)] ?? currentPrice
+  const momentum1h  = ((currentPrice - price30mAgo) / price30mAgo) * 100
+  const momentum4h  = ((currentPrice - price1hAgo) / price1hAgo) * 100
 
-  const hourlyChanges = prices.slice(1).map((p, i) => Math.abs((p - prices[i]) / prices[i]) * 100)
-  const avgHourlyVol = hourlyChanges.reduce((a, b) => a + b, 0) / hourlyChanges.length
+  // Avg 5-min move (volatility per 5 minutes)
+  const changes = prices.slice(1).map((p, i) => Math.abs((p - prices[i]) / prices[i]) * 100)
+  const avgHourlyVol = changes.reduce((a, b) => a + b, 0) / changes.length
 
-  const trend = priceVsSma > 0.1 ? 'up' : priceVsSma < -0.1 ? 'down' : 'sideways'
+  const trend = priceVsSma > 0.05 ? 'up' : priceVsSma < -0.05 ? 'down' : 'sideways'
 
   return { high24h, low24h, distFromHigh, distFromLow, sma4h, priceVsSma, momentum1h, momentum4h, avgHourlyVol, trend }
 }
@@ -90,8 +95,9 @@ export async function fetchSparklineHistory(symbol: string): Promise<number[]> {
   const id = GECKO_ID[symbol]
   if (!id) return []
 
-  const url = `https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=1&interval=hourly`
-  const res = await fetch(url, { next: { revalidate: 300 } }) // cache 5 min
+  // No interval param — CoinGecko auto-selects 5-min granularity for days=1 on free tier
+  const url = `https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=1`
+  const res = await fetch(url, { next: { revalidate: 300 } })
 
   if (!res.ok) return []
 

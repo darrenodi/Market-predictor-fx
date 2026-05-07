@@ -36,12 +36,12 @@ function formatIndicators(ind: TechnicalIndicators | null): string {
   const pct = (n: number) => (n >= 0 ? '+' : '') + n.toFixed(3) + '%'
   const nearHigh = ind.distFromHigh > -0.5
   const nearLow = ind.distFromLow < 0.5
-  return `  Technicals:
+  return `  Technicals (5-min candles, last 24h):
     24h High : ${plain(ind.high24h)} (${pct(ind.distFromHigh)} from here)${nearHigh ? ' ← RESISTANCE' : ''}
     24h Low  : ${plain(ind.low24h)} (${pct(ind.distFromLow)} from here)${nearLow ? ' ← SUPPORT' : ''}
-    4h SMA   : ${plain(ind.sma4h)} (price is ${pct(ind.priceVsSma)} vs SMA → trend: ${ind.trend.toUpperCase()})
-    Momentum : 1h ${pct(ind.momentum1h)} | 4h ${pct(ind.momentum4h)}
-    Avg hourly volatility: ${ind.avgHourlyVol.toFixed(3)}% (calibrate TP/SL to this)`
+    1h SMA   : ${plain(ind.sma4h)} (price is ${pct(ind.priceVsSma)} vs SMA → trend: ${ind.trend.toUpperCase()})
+    Momentum : 30m ${pct(ind.momentum1h)} | 1h ${pct(ind.momentum4h)}
+    Avg 5-min move: ${ind.avgHourlyVol.toFixed(4)}% — scale TP to 2-4× this, SL to 1-2× this`
 }
 
 function buildPrompt(assets: MarketData[]): string {
@@ -82,7 +82,10 @@ ${whaleLine}`
     })
     .join('\n\n')
 
+  const now = new Date().toUTCString()
   return `You are an experienced short-term derivatives trader. You think in price structure, momentum, and confluence — not just news. Review the data below and produce a 30-minute scalp signal for each asset.
+
+Current time: ${now}
 
 ${assetBlocks}
 
