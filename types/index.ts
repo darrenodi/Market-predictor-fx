@@ -44,9 +44,26 @@ export interface TechnicalIndicators {
   low24h: number
   distFromHigh: number
   distFromLow: number
+  resistances: number[]
+  supports: number[]
+  nearestResistance: number
+  nearestSupport: number
+  ema8: number
+  ema21: number
+  ema50: number
+  emaTrend: 'bullish' | 'bearish' | 'neutral'
+  priceVsEma21: number
+  rsi: number
+  rsiZone: 'overbought' | 'oversold' | 'neutral'
+  momentum30m: number
+  momentum1h: number
+  atr: number
+  atrPct: number
+  volumeRatio: number
+  suggestedSlLong: number
+  suggestedSlShort: number
   sma4h: number
   priceVsSma: number
-  momentum1h: number
   momentum4h: number
   avgHourlyVol: number
   trend: 'up' | 'down' | 'sideways'
