@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { fetchAllPrices } from '@/lib/prices'
+import { fetchAllPrices, fetchSparklineHistory, computeIndicators } from '@/lib/prices'
 import { fetchAllNews, fetchWhaleAlerts } from '@/lib/news'
 import { generateSignals } from '@/lib/signals'
 import { notifyNewSignal } from '@/lib/telegram'
@@ -27,25 +27,32 @@ export async function GET(req: NextRequest) {
 
     const symbols = ['BTC', 'ETH', 'XAU', memeCoin]
 
-    // Parallel: prices + news + whale alerts + current active signals
-    const [prices, news, whaleAlerts, { data: activeSignals }] = await Promise.all([
+    // Parallel: prices + histories + news + whale alerts + current active signals
+    const [prices, news, whaleAlerts, { data: activeSignals }, ...histories] = await Promise.all([
       fetchAllPrices(memeCoin),
       fetchAllNews(symbols),
       fetchWhaleAlerts(),
       supabaseAdmin.from('signals').select('*').eq('status', 'active'),
+      ...symbols.map(s => fetchSparklineHistory(s)),
     ])
 
-    // Build MarketData array with previous signal context
+    const historyMap: Record<string, number[]> = {}
+    symbols.forEach((s, i) => { historyMap[s] = histories[i] as number[] })
+
+    // Build MarketData array with technicals + previous signal context
     const marketData = symbols
       .map(s => {
         const sym = s === 'XAU' ? 'XAU/USD' : `${s}/USD`
         const existing = (activeSignals ?? []).find(sig => sig.symbol === sym)
+        const price = prices[s]?.price ?? 0
+        const history = historyMap[s] ?? []
         return {
           symbol: sym,
-          price: prices[s]?.price ?? 0,
+          price,
           change_24h: prices[s]?.change_24h ?? 0,
           news: news[s] ?? [],
           whales: whaleAlerts.filter(w => w.symbol === s),
+          indicators: computeIndicators(history, price),
           currentSignal: existing ? {
             direction: existing.direction,
             entry: existing.market_price,

@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { MarketData } from '@/types'
+import { MarketData, TechnicalIndicators } from '@/types'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
 
@@ -22,6 +22,25 @@ export interface GeneratedSignal {
   market_price: number
   confidence: number
   reasoning: string
+}
+
+function formatIndicators(ind: TechnicalIndicators | null, price: number): string {
+  if (!ind) return '  Technicals: insufficient data'
+  const p = (n: number) => (n >= 0 ? '+' : '') + n.toFixed(3) + '%'
+  const nearHigh = ind.distFromHigh > -0.5
+  const nearLow = ind.distFromLow < 0.5
+  const levelWarning = nearHigh
+    ? '⚠ Price near 24h HIGH — likely resistance'
+    : nearLow
+    ? '⚠ Price near 24h LOW — likely support'
+    : ''
+  return `  Technicals:
+    24h High : $${ind.high24h.toLocaleString('en-US', { minimumFractionDigits: 2 })} (${p(ind.distFromHigh)} from here) ${nearHigh ? '← RESISTANCE' : ''}
+    24h Low  : $${ind.low24h.toLocaleString('en-US', { minimumFractionDigits: 2 })} (${p(ind.distFromLow)} from here) ${nearLow ? '← SUPPORT' : ''}
+    4h SMA   : $${ind.sma4h.toLocaleString('en-US', { minimumFractionDigits: 2 })} (price is ${p(ind.priceVsSma)} vs SMA → trend: ${ind.trend.toUpperCase()})
+    Momentum : 1h ${p(ind.momentum1h)} | 4h ${p(ind.momentum4h)}
+    Avg hourly volatility: ${ind.avgHourlyVol.toFixed(3)}% (use this to calibrate TP/SL)
+    ${levelWarning}`
 }
 
 function buildPrompt(assets: MarketData[]): string {
@@ -51,9 +70,12 @@ function buildPrompt(assets: MarketData[]): string {
   Current P&L: ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(3)}% — trade is ${pnlPct >= 0 ? 'WINNING' : 'LOSING'}`
       }
 
+      const techBlock = formatIndicators(a.indicators, a.price)
+
       return `${a.symbol}
-  Price : $${priceFmt(a.price)}
-  24h   : ${a.change_24h >= 0 ? '+' : ''}${a.change_24h.toFixed(2)}%
+  Price    : $${priceFmt(a.price)}
+  24h      : ${a.change_24h >= 0 ? '+' : ''}${a.change_24h.toFixed(2)}%
+${techBlock}
 ${prevBlock}
   News  :
 ${newsLines}
@@ -62,22 +84,26 @@ ${whaleLine}`
     })
     .join('\n\n')
 
-  return `You are a professional short-term derivatives trading analyst specialising in 30-minute scalp trades. Review the current market data including any PREVIOUS signals that are still open.
+  return `You are an experienced short-term derivatives trader. You think in price structure, momentum, and confluence — not just news. Review the data below and produce a 30-minute scalp signal for each asset.
 
 ${assetBlocks}
 
-CRITICAL RULES:
-1. CONSISTENCY: If a previous signal exists and the trade is WINNING (moving toward TP), you MUST maintain the same direction. Do NOT flip just because 30 minutes passed. Only reverse if conditions have materially changed (major negative news, whale reversal, clear trend break).
-2. TIMEFRAME: TP and SL must be reachable within 30 minutes from current price.
-3. TP/SL distance from current price:
-   - Crypto (BTC/ETH): 0.15% – 0.5%
-   - Gold (XAU): 0.08% – 0.2%
-   - Meme coins: 0.3% – 0.8%
-4. DIRECTION: Choose "long" or "short" based on data. Go short if momentum is bearish, news negative, or whales selling. Do NOT default to long.
-5. leverage: high confidence (>75%): 50-200x crypto, 20-50x gold; medium: 20-50x crypto, 10-20x gold; low: 10-20x crypto, 5-10x gold
-6. portfolio_pct: 3-7
-7. confidence: honest 0.0–1.0, do not inflate
-8. reasoning: 2 sentences. Sentence 1: what the data shows. Sentence 2: why you maintained OR changed direction vs previous signal.
+HOW TO THINK (in order):
+1. STRUCTURE FIRST: Where is price relative to the 24h high/low? If price is at resistance → bias short. If at support → bias long. Never fight a key level without strong confluence.
+2. MOMENTUM: Is the 1h and 4h momentum aligned with your bias? Fading momentum = lower confidence.
+3. TREND: Is price above or below the 4h SMA? Trading with the trend = higher probability.
+4. CONFLUENCE: Do technicals AND news/whales agree? Both aligned = high confidence. Conflicting = lower confidence or skip.
+5. CONSISTENCY: If a previous signal is WINNING, maintain it. Only flip if structure has clearly changed.
+
+RULES:
+- TP/SL must be calibrated to avg hourly volatility provided. TP should be ~1× to 2× the avg hourly vol. SL should be ~0.5× to 1× avg hourly vol. Minimum risk/reward ratio: 1.5:1.
+- Do NOT place a long signal when price is within 0.3% of the 24h high without a very strong breakout reason.
+- Do NOT place a short signal when price is within 0.3% of the 24h low without a very strong breakdown reason.
+- direction: "long" or "short" — never default. Go where structure and momentum point.
+- leverage: high confidence (>75%): 50-200x crypto, 20-50x gold; medium: 20-50x crypto, 10-20x gold; low: 10-20x crypto, 5-10x gold
+- portfolio_pct: 3-7
+- confidence: 0.0–1.0, honest — low if technicals and news conflict
+- reasoning: 2 sentences. Sentence 1: structure/momentum reading. Sentence 2: news/whale confluence and final direction rationale.
 
 Respond with ONLY valid JSON — no markdown, no extra text:
 {
