@@ -8,8 +8,8 @@ export async function GET() {
     .from('signals')
     .select('*')
     .in('status', ['tp_hit', 'sl_hit', 'expired'])
-    .order('updated_at', { ascending: false })
-    .limit(50)
+    .order('created_at', { ascending: false })
+    .limit(100)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ signals: data ?? [] })

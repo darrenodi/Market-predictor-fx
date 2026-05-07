@@ -12,17 +12,79 @@ function fmtPrice(n: number): string {
 
 function timeDiff(from: string, to: string): string {
   const mins = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60000)
-  if (mins < 1) return '<1 min'
-  if (mins < 60) return `${mins} min`
+  if (mins < 1) return '<1m'
+  if (mins < 60) return `${mins}m`
   const h = Math.floor(mins / 60)
   const m = mins % 60
-  return m > 0 ? `${h}h ${m}m` : `${h}h`
+  return m > 0 ? `${h}h${m}m` : `${h}h`
 }
 
-function fmtDate(d: string): string {
-  return new Date(d).toLocaleString('en-GB', {
+function slotLabel(dateStr: string): string {
+  return new Date(dateStr).toLocaleString('en-GB', {
     day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   })
+}
+
+// Round to nearest 30-min slot for grouping
+function slotKey(dateStr: string): string {
+  const d = new Date(dateStr)
+  d.setSeconds(0, 0)
+  d.setMinutes(d.getMinutes() < 30 ? 0 : 30)
+  return d.toISOString()
+}
+
+// Filter out signals with obviously bad TP/SL (scale errors from before the fix)
+function isValid(sig: Signal): boolean {
+  const tpDev = Math.abs((sig.tp - sig.market_price) / sig.market_price)
+  const slDev = Math.abs((sig.sl - sig.market_price) / sig.market_price)
+  return tpDev <= 0.1 && slDev <= 0.1
+}
+
+interface CellProps { sig: Signal | undefined }
+
+function Cell({ sig }: CellProps) {
+  if (!sig) return <td className="px-3 py-3 text-center text-gray-600 text-xs">—</td>
+
+  const closedAt = sig.tp_hit_at ?? sig.sl_hit_at ?? sig.updated_at
+  const duration = timeDiff(sig.created_at, closedAt)
+  const isTP = sig.status === 'tp_hit'
+  const isSL = sig.status === 'sl_hit'
+
+  return (
+    <td className="px-3 py-3">
+      <div className="flex flex-col items-center gap-1">
+        {/* Direction */}
+        <span className={`text-xs font-bold px-2 py-0.5 rounded w-full text-center ${
+          sig.direction === 'long' ? 'bg-[#0a2e1a] text-[#22c55e]' : 'bg-[#2e0a0a] text-red-400'
+        }`}>
+          {sig.direction.toUpperCase()}
+        </span>
+        {/* Entry */}
+        <span className="text-[10px] text-gray-400 font-mono">${fmtPrice(sig.market_price)}</span>
+        {/* TP / SL prices */}
+        <div className="flex gap-1 text-[10px] font-mono">
+          <span className="text-[#22c55e]">↑{fmtPrice(sig.tp)}</span>
+          <span className="text-red-400">↓{fmtPrice(sig.sl)}</span>
+        </div>
+        {/* Result */}
+        {isTP && (
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#0a2e1a] text-[#22c55e] w-full text-center">
+            ✓ TP · {duration}
+          </span>
+        )}
+        {isSL && (
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#2e0a0a] text-red-400 w-full text-center">
+            ✗ SL · {duration}
+          </span>
+        )}
+        {!isTP && !isSL && (
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#0d1a2e] text-gray-500 w-full text-center">
+            Expired · {duration}
+          </span>
+        )}
+      </div>
+    </td>
+  )
 }
 
 export default function SignalHistory() {
@@ -32,73 +94,79 @@ export default function SignalHistory() {
   useEffect(() => {
     fetch('/api/history')
       .then(r => r.json())
-      .then(d => { setSignals(d.signals ?? []); setLoading(false) })
+      .then(d => { setSignals((d.signals ?? []).filter(isValid)); setLoading(false) })
       .catch(() => setLoading(false))
   }, [])
+
+  if (loading) {
+    return (
+      <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-5 animate-pulse">
+        <div className="h-5 w-32 bg-[#1e3a5f] rounded mb-4" />
+        <div className="space-y-2">
+          {[1,2,3,4].map(i => <div key={i} className="h-16 bg-[#1e3a5f] rounded" />)}
+        </div>
+      </div>
+    )
+  }
+
+  if (signals.length === 0) {
+    return (
+      <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-5">
+        <h2 className="text-white font-semibold mb-4">Signal History</h2>
+        <p className="text-gray-500 text-sm text-center py-6">
+          No closed signals yet — history appears here once trades complete.
+        </p>
+      </div>
+    )
+  }
+
+  // Collect all unique symbols in order
+  const symbolOrder = ['BTC/USD', 'ETH/USD', 'XAU/USD']
+  const otherSymbols = [...new Set(signals.map(s => s.symbol))].filter(s => !symbolOrder.includes(s))
+  const columns = [...symbolOrder.filter(s => signals.some(sig => sig.symbol === s)), ...otherSymbols]
+
+  // Group signals by 30-min time slot
+  const slotMap = new Map<string, Map<string, Signal>>()
+  for (const sig of signals) {
+    const slot = slotKey(sig.created_at)
+    if (!slotMap.has(slot)) slotMap.set(slot, new Map())
+    // Keep latest signal per symbol per slot
+    if (!slotMap.get(slot)!.has(sig.symbol)) {
+      slotMap.get(slot)!.set(sig.symbol, sig)
+    }
+  }
+
+  const slots = [...slotMap.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 20)
 
   return (
     <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-5">
       <h2 className="text-white font-semibold mb-4">Signal History</h2>
-
-      {loading ? (
-        <div className="space-y-2 animate-pulse">
-          {[1,2,3,4].map(i => <div key={i} className="h-10 bg-[#1e3a5f] rounded" />)}
-        </div>
-      ) : signals.length === 0 ? (
-        <p className="text-gray-500 text-sm text-center py-6">No closed signals yet — history will appear here once trades complete.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[640px]">
-            <thead>
-              <tr className="text-gray-400 text-xs border-b border-[#1e3a5f]">
-                <th className="text-left pb-2 pr-4">Asset</th>
-                <th className="text-left pb-2 pr-4">Dir</th>
-                <th className="text-right pb-2 pr-4">Entry</th>
-                <th className="text-right pb-2 pr-4">TP</th>
-                <th className="text-right pb-2 pr-4">SL</th>
-                <th className="text-left pb-2 pr-4">Result</th>
-                <th className="text-right pb-2 pr-4">Time to Close</th>
-                <th className="text-right pb-2">Opened</th>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-[#1e3a5f]">
+              <th className="text-left text-xs text-gray-400 pb-2 pr-4 whitespace-nowrap">Time (GMT)</th>
+              {columns.map(col => (
+                <th key={col} className="text-center text-xs text-gray-400 pb-2 px-3 whitespace-nowrap">
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#1e3a5f]">
+            {slots.map(([slot, sigMap]) => (
+              <tr key={slot} className="hover:bg-[#0a1a2e] transition-colors align-top">
+                <td className="py-3 pr-4 text-xs text-gray-400 whitespace-nowrap font-mono">
+                  {slotLabel(slot)}
+                </td>
+                {columns.map(col => (
+                  <Cell key={col} sig={sigMap.get(col)} />
+                ))}
               </tr>
-            </thead>
-            <tbody className="divide-y divide-[#1e3a5f]">
-              {signals.map(sig => {
-                const closedAt = sig.tp_hit_at ?? sig.sl_hit_at ?? sig.updated_at
-                const duration = timeDiff(sig.created_at, closedAt)
-                const isTP = sig.status === 'tp_hit'
-                const isSL = sig.status === 'sl_hit'
-
-                return (
-                  <tr key={sig.id} className="hover:bg-[#0a1a2e] transition-colors">
-                    <td className="py-2.5 pr-4 font-semibold text-white">{sig.symbol}</td>
-                    <td className="py-2.5 pr-4">
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${sig.direction === 'long' ? 'bg-[#0a2e1a] text-[#22c55e]' : 'bg-[#2e0a0a] text-red-400'}`}>
-                        {sig.direction.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="py-2.5 pr-4 text-right text-gray-300 font-mono">${fmtPrice(sig.market_price)}</td>
-                    <td className="py-2.5 pr-4 text-right text-[#22c55e] font-mono">${fmtPrice(sig.tp)}</td>
-                    <td className="py-2.5 pr-4 text-right text-red-400 font-mono">${fmtPrice(sig.sl)}</td>
-                    <td className="py-2.5 pr-4">
-                      {isTP && (
-                        <span className="text-xs font-bold px-2 py-0.5 rounded bg-[#0a2e1a] text-[#22c55e]">✓ TP Hit</span>
-                      )}
-                      {isSL && (
-                        <span className="text-xs font-bold px-2 py-0.5 rounded bg-[#2e0a0a] text-red-400">✗ SL Hit</span>
-                      )}
-                      {!isTP && !isSL && (
-                        <span className="text-xs font-bold px-2 py-0.5 rounded bg-[#1e3a5f] text-gray-400">Expired</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 pr-4 text-right text-gray-400">{duration}</td>
-                    <td className="py-2.5 text-right text-gray-500 text-xs">{fmtDate(sig.created_at)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
