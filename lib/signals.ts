@@ -68,9 +68,9 @@ function computeBias(ind: TechnicalIndicators, price: number): {
   const biasScore = Math.max(bullSignals, bearSignals)
   const biasDirection = bullSignals > bearSignals ? 'LONG' : bearSignals > bullSignals ? 'SHORT' : 'NEUTRAL'
 
-  // Hard blocks
-  const blockLong = ind.rsiZone === 'overbought' ? `RSI ${ind.rsi.toFixed(0)} is OVERBOUGHT — do not go long` : null
-  const blockShort = ind.rsiZone === 'oversold' ? `RSI ${ind.rsi.toFixed(0)} is OVERSOLD — do not go short` : null
+  // Hard blocks — only at extreme RSI, not just overbought/oversold zone
+  const blockLong = ind.rsi >= 75 ? `RSI ${ind.rsi.toFixed(0)} is EXTREME OVERBOUGHT (≥75) — avoid long, consider short` : null
+  const blockShort = ind.rsi <= 25 ? `RSI ${ind.rsi.toFixed(0)} is EXTREME OVERSOLD (≤25) — avoid short, consider long` : null
 
   return { biasDirection, biasScore, biasReasons: reasons, blockLong, blockShort }
 }
@@ -110,25 +110,31 @@ function buildPrompt(assets: MarketData[]): string {
     Support    : ${ind.supports.map(plain).join(' | ') || 'none found'} ${ind.nearestSupport ? `(nearest: ${plain(ind.nearestSupport)}, ${(((a.price - ind.nearestSupport) / a.price) * 100).toFixed(3)}% away)` : ''}
     ATR(5-min) : ${plain(ind.atr)} (${ind.atrPct.toFixed(4)}% per 5 min)`
 
-      // Pre-compute TP/SL scenarios based on swing levels
+      // ATR-based TP/SL for 30-min scalps (not swing-level — that's for swing trades)
+      // SL = 1.5× ATR, TP = 3× ATR → automatic 2:1 R/R
       const atr = ind.atr
-      const longTp = ind.nearestResistance > a.price ? ind.nearestResistance - atr * 0.5 : a.price * 1.003
-      const longSl = ind.suggestedSlLong < a.price ? ind.suggestedSlLong : a.price - atr * 2
-      const shortTp = ind.nearestSupport < a.price ? ind.nearestSupport + atr * 0.5 : a.price * 0.997
-      const shortSl = ind.suggestedSlShort > a.price ? ind.suggestedSlShort : a.price + atr * 2
-      const longRR = longTp > a.price && longSl < a.price ? ((longTp - a.price) / (a.price - longSl)).toFixed(2) : 'N/A'
-      const shortRR = shortTp < a.price && shortSl > a.price ? ((a.price - shortTp) / (shortSl - a.price)).toFixed(2) : 'N/A'
+      const longTp  = a.price + atr * 3
+      const longSl  = a.price - atr * 1.5
+      const shortTp = a.price - atr * 3
+      const shortSl = a.price + atr * 1.5
 
-      slTpGuide = `  PRE-COMPUTED TP/SL (use these, adjust only slightly if justified):
-    IF LONG : TP=${plain(longTp)} | SL=${plain(longSl)} | R/R=${longRR}:1
-    IF SHORT: TP=${plain(shortTp)} | SL=${plain(shortSl)} | R/R=${shortRR}:1
-    (SL placed beyond swing levels + 1 ATR buffer — do NOT tighten the SL)`
+      // Cap TP at nearest swing level so we don't reach past resistance
+      const cappedLongTp  = ind.nearestResistance > a.price && ind.nearestResistance < longTp ? ind.nearestResistance - atr * 0.3 : longTp
+      const cappedShortTp = ind.nearestSupport > 0 && ind.nearestSupport > shortTp ? ind.nearestSupport + atr * 0.3 : shortTp
 
       const trendDir = a.price >= ind.ema50 ? 'LONG' : 'SHORT'
-      slTpGuide += `\n  📈 TREND DIRECTION (EMA50): ${trendDir} only — trading counter-trend is low probability`
-      if (bias.blockLong) slTpGuide += `\n  ⛔ BLOCKED: ${bias.blockLong}`
-      if (bias.blockShort) slTpGuide += `\n  ⛔ BLOCKED: ${bias.blockShort}`
-      if (bias.biasScore < 3) slTpGuide += `\n  ⚠ LOW SETUP QUALITY: bias score ${bias.biasScore}/4 — SKIP this asset (set confidence=0.0)`
+      const trendNote = `preferred direction: ${trendDir} (price ${a.price >= ind.ema50 ? 'above' : 'below'} EMA50 — counter-trend needs strong confluence)`
+
+      slTpGuide = `  PRE-COMPUTED TP/SL for 30-min scalp (ATR-based, 2:1 R/R built in):
+    IF LONG : TP=${plain(cappedLongTp)} | SL=${plain(longSl)} | R/R=2:1
+    IF SHORT: TP=${plain(cappedShortTp)} | SL=${plain(shortSl)} | R/R=2:1
+    ATR=${plain(atr)} (each TP is 3×ATR, each SL is 1.5×ATR from entry)
+    Nearby swing levels for context — nearest resistance: ${plain(ind.nearestResistance)} | nearest support: ${plain(ind.nearestSupport)}
+    Trend: ${trendNote}`
+
+      if (bias.blockLong)   slTpGuide += `\n  ⛔ RSI BLOCK: ${bias.blockLong}`
+      if (bias.blockShort)  slTpGuide += `\n  ⛔ RSI BLOCK: ${bias.blockShort}`
+      if (bias.biasScore < 2) slTpGuide += `\n  ⚠ VERY WEAK SETUP (${bias.biasScore}/4) — skip unless strong news catalyst`
     }
 
     if (a.currentSignal) {
@@ -159,25 +165,25 @@ ${assetBlocks}
 
 ━━━ DECISION RULES (follow in order) ━━━
 
-RULE 1 — TREND FILTER (hard rule, no exceptions):
-  • Price ABOVE EMA50 → LONG only. Do NOT short an uptrend.
-  • Price BELOW EMA50 → SHORT only. Do NOT long a downtrend.
-  • Exception: RSI extreme (≤25 oversold in downtrend, ≥75 overbought in uptrend) → counter-trend allowed but confidence must be ≤0.55 and lower leverage.
+RULE 1 — TREND PREFERENCE (soft guideline):
+  • Price ABOVE EMA50 → prefer LONG. Counter-trend short allowed if 3+ bear signals agree.
+  • Price BELOW EMA50 → prefer SHORT. Counter-trend long allowed if 3+ bull signals agree.
+  • RSI extreme (≤25 or ≥75) → counter-trend allowed at any bias score ≥2.
+  • The pre-computed TP/SL are ATR-based for 30-min scalps — use them.
 
 RULE 2 — MINIMUM SETUP QUALITY:
   • Bias score 3–4/4 → take the trade (high probability)
-  • Bias score 2/4 → SKIP. Set confidence=0.0. Not enough confluence.
-  • Bias score 0–1/4 → SKIP. Set confidence=0.0. Market is uncertain.
-  • Neutral EMA trend with bias score ≤2 → SKIP.
+  • Bias score 2/4 → take the trade if news or whale activity adds confluence
+  • Bias score 0–1/4 → SKIP. Set confidence=0.0. Market is too uncertain.
 
-RULE 3 — TP MUST BE AT LEAST 2× THE SL DISTANCE (2:1 R/R minimum):
-  • If pre-computed levels don't give 2:1, extend TP to the next swing level.
-  • NEVER move SL closer to entry to fake a good R/R — wider SL is ok.
-  • A signal with 1:1 R/R is not worth taking — skip it.
+RULE 3 — TP MUST BE AT LEAST 1.5× THE SL DISTANCE (1.5:1 R/R minimum):
+  • Use the pre-computed ATR-based TP/SL — they give 2:1 by default.
+  • Only tighten TP if a swing level blocks the way. Never move SL closer to fake R/R.
+  • A 1:1 or worse R/R is not worth taking — skip it.
 
 RULE 4 — USE PRE-COMPUTED TP/SL:
-  • The TP/SL levels are anchored to real swing levels. Use them.
-  • Only extend TP further if there is a clear next level. Never tighten SL.
+  • The TP/SL levels are ATR-based (3×ATR TP, 1.5×ATR SL). Use them unchanged.
+  • Only cap TP at a swing level if price is close to resistance/support.
 
 RULE 5 — PREVIOUS SIGNAL:
   • If the previous signal is WINNING and trend hasn't changed → keep same direction.
@@ -185,14 +191,15 @@ RULE 5 — PREVIOUS SIGNAL:
 
 LEVERAGE & SIZING:
   • Bias 4/4 + news confirms: 100–200x crypto / 30–50x gold
-  • Bias 3/4: 50x crypto / 20x gold
-  • Counter-trend exception: max 20x crypto / 10x gold
+  • Bias 3/4: 50–100x crypto / 20–30x gold
+  • Bias 2/4 with news: 30–50x crypto / 10–20x gold
   • portfolio_pct: 3–7
 
 CONFIDENCE:
   • 0.8–1.0: bias 4/4, trend aligned, news confirms
-  • 0.6–0.79: bias 3/4, trend aligned
-  • 0.5–0.59: counter-trend exception only
+  • 0.65–0.79: bias 3/4, trend aligned
+  • 0.5–0.64: bias 2/4 with news catalyst, or counter-trend with strong RSI extreme
+  • 0.45–0.49: valid but weak — only take if no better setup exists
   • 0.0: skip — no signal this round
 
 reasoning: 2 sentences. Sentence 1: what the chart structure shows. Sentence 2: what news/whales add, and why you took or skipped.
@@ -258,7 +265,7 @@ export async function generateSignals(assets: MarketData[]): Promise<GeneratedSi
         const slSide = sig.direction === 'long' ? sl < price : sl > price
 
         // Drop skipped signals (confidence=0)
-        if (sig.confidence < 0.5) {
+        if (sig.confidence < 0.45) {
           console.log(`[signals] Skipped ${sig.symbol}: low confidence (${sig.confidence})`)
           return null
         }
@@ -268,11 +275,11 @@ export async function generateSignals(assets: MarketData[]): Promise<GeneratedSi
           return null
         }
 
-        // Enforce minimum 2:1 R/R
+        // Enforce minimum 1.5:1 R/R
         const reward = Math.abs(tp - price)
         const risk = Math.abs(sl - price)
-        if (reward / risk < 2.0) {
-          console.warn(`[signals] Dropped ${sig.symbol}: R/R ${(reward/risk).toFixed(2)}:1 < 2:1 minimum`)
+        if (reward / risk < 1.5) {
+          console.warn(`[signals] Dropped ${sig.symbol}: R/R ${(reward/risk).toFixed(2)}:1 < 1.5:1 minimum`)
           return null
         }
 

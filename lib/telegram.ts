@@ -91,6 +91,6 @@ Loss: -${pct.toFixed(2)}% (-${lev.toFixed(1)}% with ${s.leverage}x)
 
 export async function notifyNewSignal(signal: GeneratedSignal): Promise<void> {
   const groupId = process.env.TELEGRAM_GROUP_ID
-  if (!groupId || signal.confidence < 0.55) return
+  if (!groupId || signal.confidence < 0.45) return
   await sendMessage(groupId, formatNewSignal(signal))
 }
