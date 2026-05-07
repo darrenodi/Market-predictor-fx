@@ -6,6 +6,7 @@ import { Bell, Settings, User } from 'lucide-react'
 import Sidebar from '@/components/Sidebar'
 import AssetCard from '@/components/AssetCard'
 import Overview from '@/components/Overview'
+import SignalHistory from '@/components/SignalHistory'
 import { Signal, PriceInfo } from '@/types'
 
 type PriceMap = Record<string, PriceInfo>
@@ -114,6 +115,9 @@ export default function Dashboard() {
 
           {/* Overview */}
           <Overview signals={signals} loading={loading} />
+
+          {/* Signal History */}
+          <SignalHistory />
         </div>
       </main>
     </div>
