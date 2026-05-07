@@ -87,9 +87,12 @@ function Cell({ sig }: CellProps) {
   )
 }
 
+const PAGE_SIZE = 10
+
 export default function SignalHistory() {
   const [signals, setSignals] = useState<Signal[]>([])
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(0)
 
   useEffect(() => {
     fetch('/api/history')
@@ -136,11 +139,20 @@ export default function SignalHistory() {
     }
   }
 
-  const slots = [...slotMap.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 20)
+  const allSlots = [...slotMap.entries()].sort((a, b) => b[0].localeCompare(a[0]))
+  const totalPages = Math.ceil(allSlots.length / PAGE_SIZE)
+  const slots = allSlots.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   return (
     <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-5">
-      <h2 className="text-white font-semibold mb-4">Signal History</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-white font-semibold">Signal History</h2>
+        {totalPages > 1 && (
+          <span className="text-xs text-gray-500">
+            Page {page + 1} of {totalPages}
+          </span>
+        )}
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -167,6 +179,40 @@ export default function SignalHistory() {
           </tbody>
         </table>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-[#1e3a5f]">
+          <button
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="px-4 py-1.5 text-sm rounded-lg border border-[#1e3a5f] text-gray-400 hover:text-white hover:border-gray-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            ← Previous
+          </button>
+          <div className="flex gap-1">
+            {Array.from({ length: totalPages }, (_, i) => (
+              <button
+                key={i}
+                onClick={() => setPage(i)}
+                className={`w-8 h-8 text-xs rounded-lg transition-colors ${
+                  i === page
+                    ? 'bg-[#1e3a5f] text-white'
+                    : 'text-gray-500 hover:text-white hover:bg-[#0a1a2e]'
+                }`}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+            disabled={page === totalPages - 1}
+            className="px-4 py-1.5 text-sm rounded-lg border border-[#1e3a5f] text-gray-400 hover:text-white hover:border-gray-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            Next →
+          </button>
+        </div>
+      )}
     </div>
   )
 }
