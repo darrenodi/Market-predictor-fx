@@ -124,8 +124,11 @@ function buildPrompt(assets: MarketData[]): string {
     IF SHORT: TP=${plain(shortTp)} | SL=${plain(shortSl)} | R/R=${shortRR}:1
     (SL placed beyond swing levels + 1 ATR buffer — do NOT tighten the SL)`
 
+      const trendDir = a.price >= ind.ema50 ? 'LONG' : 'SHORT'
+      slTpGuide += `\n  📈 TREND DIRECTION (EMA50): ${trendDir} only — trading counter-trend is low probability`
       if (bias.blockLong) slTpGuide += `\n  ⛔ BLOCKED: ${bias.blockLong}`
       if (bias.blockShort) slTpGuide += `\n  ⛔ BLOCKED: ${bias.blockShort}`
+      if (bias.biasScore < 3) slTpGuide += `\n  ⚠ LOW SETUP QUALITY: bias score ${bias.biasScore}/4 — SKIP this asset (set confidence=0.0)`
     }
 
     if (a.currentSignal) {
@@ -148,29 +151,54 @@ ${newsLines}
 ${whaleLine}`
   }).join('\n\n')
 
-  return `You are a systematic trading signal engine. Your job is simple: the technical analysis is already done for you. Just confirm or override the bias based on news/whale data, then output the signal.
+  return `You are a disciplined systematic trading signal engine. Your primary goal is TP hits — it is far better to skip a trade than to enter a bad one.
 
 Time: ${now}
 
 ${assetBlocks}
 
-YOUR TASK FOR EACH ASSET:
-1. Read the TECHNICAL BIAS — it tells you what the chart says
-2. Read the NEWS + WHALE data — does it confirm or contradict the bias?
-3. If confirmed → use the bias direction, use the pre-computed TP/SL
-4. If contradicted by strong news → override, explain why
-5. If BLOCKED by RSI constraint → obey it, no exceptions
-6. If previous signal is WINNING → maintain direction unless strongly contradicted
+━━━ DECISION RULES (follow in order) ━━━
 
-OUTPUT RULES:
-- Use the pre-computed TP/SL values. Only deviate if there is a specific level-based reason.
-- NEVER tighten the SL to less than the pre-computed value (wider is ok, tighter causes SL hits)
-- leverage: bias score 4/4 → 100-200x crypto/30-50x gold | 3/4 → 50x crypto/20x gold | 2/4 → 20x crypto/10x gold | 1/4 → 10x crypto/5x gold
-- portfolio_pct: 3–7
-- confidence: 0.0–1.0 based on bias score + news confluence
-- reasoning: 2 sentences max — what the chart showed, whether news confirmed or contradicted
+RULE 1 — TREND FILTER (hard rule, no exceptions):
+  • Price ABOVE EMA50 → LONG only. Do NOT short an uptrend.
+  • Price BELOW EMA50 → SHORT only. Do NOT long a downtrend.
+  • Exception: RSI extreme (≤25 oversold in downtrend, ≥75 overbought in uptrend) → counter-trend allowed but confidence must be ≤0.55 and lower leverage.
+
+RULE 2 — MINIMUM SETUP QUALITY:
+  • Bias score 3–4/4 → take the trade (high probability)
+  • Bias score 2/4 → SKIP. Set confidence=0.0. Not enough confluence.
+  • Bias score 0–1/4 → SKIP. Set confidence=0.0. Market is uncertain.
+  • Neutral EMA trend with bias score ≤2 → SKIP.
+
+RULE 3 — TP MUST BE AT LEAST 2× THE SL DISTANCE (2:1 R/R minimum):
+  • If pre-computed levels don't give 2:1, extend TP to the next swing level.
+  • NEVER move SL closer to entry to fake a good R/R — wider SL is ok.
+  • A signal with 1:1 R/R is not worth taking — skip it.
+
+RULE 4 — USE PRE-COMPUTED TP/SL:
+  • The TP/SL levels are anchored to real swing levels. Use them.
+  • Only extend TP further if there is a clear next level. Never tighten SL.
+
+RULE 5 — PREVIOUS SIGNAL:
+  • If the previous signal is WINNING and trend hasn't changed → keep same direction.
+  • Do not flip direction just because 30 min passed.
+
+LEVERAGE & SIZING:
+  • Bias 4/4 + news confirms: 100–200x crypto / 30–50x gold
+  • Bias 3/4: 50x crypto / 20x gold
+  • Counter-trend exception: max 20x crypto / 10x gold
+  • portfolio_pct: 3–7
+
+CONFIDENCE:
+  • 0.8–1.0: bias 4/4, trend aligned, news confirms
+  • 0.6–0.79: bias 3/4, trend aligned
+  • 0.5–0.59: counter-trend exception only
+  • 0.0: skip — no signal this round
+
+reasoning: 2 sentences. Sentence 1: what the chart structure shows. Sentence 2: what news/whales add, and why you took or skipped.
 
 Respond ONLY with valid JSON. No markdown. No explanation outside JSON.
+Include ALL assets — use confidence=0.0 for skipped ones (they will be filtered out automatically).
 {
   "signals": [
     {
@@ -178,11 +206,11 @@ Respond ONLY with valid JSON. No markdown. No explanation outside JSON.
       "direction": "long",
       "leverage": 50,
       "portfolio_pct": 5,
-      "tp": 2355.00,
-      "sl": 2318.00,
+      "tp": 2368.00,
+      "sl": 2315.00,
       "market_price": 2338.00,
-      "confidence": 0.72,
-      "reasoning": "EMA stack bullish and RSI at 38 approaching oversold with support at 2320. No contradicting news — maintaining long bias with SL below swing support."
+      "confidence": 0.75,
+      "reasoning": "EMA50 bullish trend, RSI 42 rising from near-oversold with strong support at 2318. News confirms positive sentiment — long with 2.3:1 R/R anchored to swing levels."
     }
   ]
 }`
@@ -229,16 +257,22 @@ export async function generateSignals(assets: MarketData[]): Promise<GeneratedSi
         const tpSide = sig.direction === 'long' ? tp > price : tp < price
         const slSide = sig.direction === 'long' ? sl < price : sl > price
 
+        // Drop skipped signals (confidence=0)
+        if (sig.confidence < 0.5) {
+          console.log(`[signals] Skipped ${sig.symbol}: low confidence (${sig.confidence})`)
+          return null
+        }
+
         if (!tpOk || !slOk || !tpSide || !slSide) {
           console.warn(`[signals] Dropped ${sig.symbol}: bad TP/SL (price=${price}, tp=${tp}, sl=${sl})`)
           return null
         }
 
-        // Enforce minimum R/R of 1.2:1
+        // Enforce minimum 2:1 R/R
         const reward = Math.abs(tp - price)
         const risk = Math.abs(sl - price)
-        if (reward / risk < 1.2) {
-          console.warn(`[signals] Dropped ${sig.symbol}: R/R too low (${(reward/risk).toFixed(2)}:1)`)
+        if (reward / risk < 2.0) {
+          console.warn(`[signals] Dropped ${sig.symbol}: R/R ${(reward/risk).toFixed(2)}:1 < 2:1 minimum`)
           return null
         }
 
