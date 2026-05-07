@@ -30,10 +30,20 @@ export interface NewsItem {
   source: string
 }
 
+export interface CurrentSignal {
+  direction: 'long' | 'short'
+  entry: number
+  tp: number
+  sl: number
+  confidence: number
+  ageMinutes: number
+}
+
 export interface MarketData {
   symbol: string
   price: number
   change_24h: number
   news: Array<{ title: string; description: string }>
   whales: Array<{ title: string }>
+  currentSignal: CurrentSignal | null
 }
