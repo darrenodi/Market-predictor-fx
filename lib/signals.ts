@@ -172,59 +172,46 @@ ${newsLines}
 ${whaleLine}`
   }).join('\n\n')
 
-  return `You are a disciplined systematic trading signal engine. Your primary goal is TP hits — it is far better to skip a trade than to enter a bad one.
+  return `You are an elite futures signal engine operating like a top-tier prop trader. Every asset gets a signal every 30 minutes — the next candle is where the trade plays out.
 
 Time: ${now}
 Session: ${session.name} [${session.quality}] — ${session.note}
 
 ${assetBlocks}
 
-━━━ DECISION RULES (follow in order) ━━━
+━━━ YOUR JOB ━━━
 
-RULE 0 — SESSION FILTER:
-  • PEAK / HIGH session (London, NY, Overlap): full confidence. Trust breakouts and momentum.
-  • LOW session (Asia, Post-NY): reduce confidence by 0.1. Prefer range-fade entries over breakouts. Tighten bias requirement to 3/4 minimum.
+For EVERY asset, pick the highest-probability direction for the next 30 minutes and output a signal.
+Only set confidence=0.0 if price action is genuinely ranging with zero directional edge (rare).
 
-RULE 1 — HTF ALIGNMENT (weekly bias + 24h structure):
-  • Weekly BULLISH + structure UPTREND → strong long bias. Need 3+ bear signals to go short.
-  • Weekly BEARISH + structure DOWNTREND → strong short bias. Need 3+ bull signals to go long.
-  • Weekly and 24h structure conflict → neutral, defer to the 4-signal bias score.
-  • Price ABOVE EMA50 → prefer LONG. Counter-trend short needs 3+ bear signals.
-  • Price BELOW EMA50 → prefer SHORT. Counter-trend long needs 3+ bull signals.
-  • RSI extreme (≤25 or ≥75) → counter-trend allowed at any bias score ≥2.
+DIRECTION — use all context in order:
+  1. Weekly bias + 24h structure: if both agree, that's your direction.
+  2. EMA stack (8/21/50): bullish stack → long bias, bearish stack → short bias.
+  3. RSI: extreme overbought (≥70) favours short, extreme oversold (≤30) favours long.
+  4. Momentum: 30m and 1h momentum pointing the same way confirms direction.
+  5. Session: HIGH/PEAK sessions — trust momentum breakouts. LOW sessions — fade extremes.
+  6. News/whales: strong catalyst overrides weak TA. No catalyst → pure TA read.
 
-RULE 2 — MINIMUM SETUP QUALITY:
-  • Bias score 3–4/4 → take the trade (high probability)
-  • Bias score 2/4 → take the trade if news or whale activity adds confluence
-  • Bias score 0–1/4 → SKIP. Set confidence=0.0. Market is too uncertain.
+TP/SL — use the pre-computed ATR-based levels:
+  • They are already calculated for you above (3×ATR TP, 1.5×ATR SL from entry).
+  • Use them as-is. Only adjust if a swing level sits directly in the path.
+  • TP must be on the profit side, SL on the loss side. Never swap them.
 
-RULE 3 — TP MUST BE AT LEAST 1.5× THE SL DISTANCE (1.5:1 R/R minimum):
-  • Use the pre-computed ATR-based TP/SL — they give 2:1 by default.
-  • Only tighten TP if a swing level blocks the way. Never move SL closer to fake R/R.
-  • A 1:1 or worse R/R is not worth taking — skip it.
-
-RULE 4 — USE PRE-COMPUTED TP/SL:
-  • The TP/SL levels are ATR-based (3×ATR TP, 1.5×ATR SL). Use them unchanged.
-  • Only cap TP at a swing level if price is close to resistance/support.
-
-RULE 5 — PREVIOUS SIGNAL:
-  • If the previous signal is WINNING and trend hasn't changed → keep same direction.
-  • Do not flip direction just because 30 min passed.
+PREVIOUS SIGNAL — if the previous trade is winning and structure hasn't changed, keep direction.
 
 LEVERAGE & SIZING:
-  • Bias 4/4 + news confirms: 100–200x crypto / 30–50x gold
-  • Bias 3/4: 50–100x crypto / 20–30x gold
-  • Bias 2/4 with news: 30–50x crypto / 10–20x gold
+  • Strong setup (weekly + structure + EMA all agree): 100–200x crypto / 30–50x gold
+  • Good setup (2–3 factors agree): 50–100x crypto / 15–30x gold
+  • Weak setup (mixed signals, session noise): 20–50x crypto / 10–15x gold
   • portfolio_pct: 3–7
 
 CONFIDENCE:
-  • 0.8–1.0: bias 4/4, trend aligned, news confirms
-  • 0.65–0.79: bias 3/4, trend aligned
-  • 0.5–0.64: bias 2/4 with news catalyst, or counter-trend with strong RSI extreme
-  • 0.45–0.49: valid but weak — only take if no better setup exists
-  • 0.0: skip — no signal this round
+  • 0.8–1.0: all HTF + session + TA aligned
+  • 0.6–0.79: majority of signals agree
+  • 0.5–0.59: mixed but best available direction
+  • 0.0: only if genuinely no edge (flat range, zero momentum, zero news)
 
-reasoning: 2 sentences. Sentence 1: what the chart structure shows. Sentence 2: what news/whales add, and why you took or skipped.
+reasoning: 1 sentence — what the dominant signal is and why this direction wins right now.
 
 Respond ONLY with valid JSON. No markdown. No explanation outside JSON.
 Include ALL assets — use confidence=0.0 for skipped ones (they will be filtered out automatically).
@@ -281,27 +268,17 @@ export async function generateSignals(assets: MarketData[]): Promise<GeneratedSi
           }
         }
 
-        const tpOk = Math.abs((tp - price) / price) <= 0.08
-        const slOk = Math.abs((sl - price) / price) <= 0.08
+        // Drop only if Gemini explicitly chose to skip
+        if (sig.confidence === 0) {
+          console.log(`[signals] Skipped ${sig.symbol}: confidence=0 (no edge)`)
+          return null
+        }
+
+        // Sanity check: TP and SL must be on the correct sides
         const tpSide = sig.direction === 'long' ? tp > price : tp < price
         const slSide = sig.direction === 'long' ? sl < price : sl > price
-
-        // Drop skipped signals (confidence=0)
-        if (sig.confidence < 0.45) {
-          console.log(`[signals] Skipped ${sig.symbol}: low confidence (${sig.confidence})`)
-          return null
-        }
-
-        if (!tpOk || !slOk || !tpSide || !slSide) {
-          console.warn(`[signals] Dropped ${sig.symbol}: bad TP/SL (price=${price}, tp=${tp}, sl=${sl})`)
-          return null
-        }
-
-        // Enforce minimum 1.5:1 R/R
-        const reward = Math.abs(tp - price)
-        const risk = Math.abs(sl - price)
-        if (reward / risk < 1.5) {
-          console.warn(`[signals] Dropped ${sig.symbol}: R/R ${(reward/risk).toFixed(2)}:1 < 1.5:1 minimum`)
+        if (!tpSide || !slSide) {
+          console.warn(`[signals] Dropped ${sig.symbol}: TP/SL on wrong side (price=${price}, tp=${tp}, sl=${sl})`)
           return null
         }
 
