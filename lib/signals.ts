@@ -75,8 +75,18 @@ function computeBias(ind: TechnicalIndicators, price: number): {
   return { biasDirection, biasScore, biasReasons: reasons, blockLong, blockShort }
 }
 
+function getSession(): { name: string; quality: string; note: string } {
+  const h = new Date().getUTCHours()
+  if (h >= 13 && h < 16) return { name: 'London/NY Overlap', quality: 'PEAK', note: 'Highest liquidity — breakouts and momentum moves are reliable' }
+  if (h >= 16 && h < 21) return { name: 'New York', quality: 'HIGH', note: 'Institutional flow — trend continuations valid, watch for reversals at NY close' }
+  if (h >= 8 && h < 13) return { name: 'London', quality: 'HIGH', note: 'European open — strong momentum moves, good for breakouts' }
+  if (h >= 21 || h < 2) return { name: 'Post-NY / Pre-Asia', quality: 'LOW', note: 'Thin volume — choppy price action, avoid breakouts, range-play only' }
+  return { name: 'Asia', quality: 'LOW', note: 'Reduced volume — tight ranges, fake breakouts common, prefer counter-trend fades' }
+}
+
 function buildPrompt(assets: MarketData[]): string {
   const now = new Date().toUTCString()
+  const session = getSession()
 
   const assetBlocks = assets.map(a => {
     const ind = a.indicators
@@ -98,12 +108,17 @@ function buildPrompt(assets: MarketData[]): string {
                   ind.volumeRatio <= 0.6 ? '⚠ LOW (weak conviction)' :
                   `normal (${ind.volumeRatio.toFixed(2)}x avg)`
 
+      const structureEmoji = ind.priceStructure === 'uptrend' ? '📈' : ind.priceStructure === 'downtrend' ? '📉' : '↔'
+      const weeklyEmoji   = ind.weeklyBias === 'bullish' ? '🟢' : ind.weeklyBias === 'bearish' ? '🔴' : '⚪'
+
       techSection = `  TECHNICAL SUMMARY:
+    Weekly bias: ${weeklyEmoji} ${ind.weeklyBias.toUpperCase()} (7-day direction)
+    24h structure: ${structureEmoji} ${ind.priceStructure.toUpperCase()} (12h price action: HH/HL or LH/LL)
     Bias       : ${bias.biasDirection} (${bias.biasScore}/4 signals agree)
     Signals    :
       ${bias.biasReasons.map(r => `• ${r}`).join('\n      ')}
     EMA        : EMA8=${plain(ind.ema8)} | EMA21=${plain(ind.ema21)} | EMA50=${plain(ind.ema50)} → ${ind.emaTrend.toUpperCase()}
-    RSI(14)    : ${ind.rsi.toFixed(1)} [${ind.rsiZone.toUpperCase()}]${ind.rsiZone !== 'neutral' ? ' ← HARD CONSTRAINT BELOW' : ''}
+    RSI(14)    : ${ind.rsi.toFixed(1)} [${ind.rsiZone.toUpperCase()}]
     Volume     : ${vol}
     24h Range  : ${plain(ind.low24h)} — ${plain(ind.high24h)}
     Resistance : ${ind.resistances.map(plain).join(' | ') || 'none found'} ${ind.nearestResistance ? `(nearest: ${plain(ind.nearestResistance)}, ${(((ind.nearestResistance - a.price) / a.price) * 100).toFixed(3)}% away)` : ''}
@@ -160,16 +175,23 @@ ${whaleLine}`
   return `You are a disciplined systematic trading signal engine. Your primary goal is TP hits — it is far better to skip a trade than to enter a bad one.
 
 Time: ${now}
+Session: ${session.name} [${session.quality}] — ${session.note}
 
 ${assetBlocks}
 
 ━━━ DECISION RULES (follow in order) ━━━
 
-RULE 1 — TREND PREFERENCE (soft guideline):
-  • Price ABOVE EMA50 → prefer LONG. Counter-trend short allowed if 3+ bear signals agree.
-  • Price BELOW EMA50 → prefer SHORT. Counter-trend long allowed if 3+ bull signals agree.
+RULE 0 — SESSION FILTER:
+  • PEAK / HIGH session (London, NY, Overlap): full confidence. Trust breakouts and momentum.
+  • LOW session (Asia, Post-NY): reduce confidence by 0.1. Prefer range-fade entries over breakouts. Tighten bias requirement to 3/4 minimum.
+
+RULE 1 — HTF ALIGNMENT (weekly bias + 24h structure):
+  • Weekly BULLISH + structure UPTREND → strong long bias. Need 3+ bear signals to go short.
+  • Weekly BEARISH + structure DOWNTREND → strong short bias. Need 3+ bull signals to go long.
+  • Weekly and 24h structure conflict → neutral, defer to the 4-signal bias score.
+  • Price ABOVE EMA50 → prefer LONG. Counter-trend short needs 3+ bear signals.
+  • Price BELOW EMA50 → prefer SHORT. Counter-trend long needs 3+ bull signals.
   • RSI extreme (≤25 or ≥75) → counter-trend allowed at any bias score ≥2.
-  • The pre-computed TP/SL are ATR-based for 30-min scalps — use them.
 
 RULE 2 — MINIMUM SETUP QUALITY:
   • Bias score 3–4/4 → take the trade (high probability)

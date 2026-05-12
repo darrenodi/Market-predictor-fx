@@ -43,6 +43,9 @@ export interface TechnicalIndicators {
   // SL guidance
   suggestedSlLong: number   // just below nearest support
   suggestedSlShort: number  // just above nearest resistance
+  // HTF context
+  priceStructure: 'uptrend' | 'downtrend' | 'sideways'  // HH/HL pattern on 12h view
+  weeklyBias: 'bullish' | 'bearish' | 'neutral'          // 7-day direction
   // Legacy aliases (used by formatIndicators)
   sma4h: number
   priceVsSma: number
@@ -112,6 +115,7 @@ export function computeIndicators(
   prices: number[],
   volumes: number[],
   currentPrice: number,
+  weeklyPrices: number[] = [],
 ): TechnicalIndicators | null {
   if (prices.length < 50) return null
 
@@ -168,6 +172,19 @@ export function computeIndicators(
   const trend: TechnicalIndicators['trend'] =
     emaTrend === 'bullish' ? 'up' : emaTrend === 'bearish' ? 'down' : 'sideways'
 
+  // Price structure: compare 12h ago → 6h ago → now (5-min candles: 144=12h, 72=6h)
+  const price12hAgo = all[Math.max(0, n - 145)]
+  const price6hAgo  = all[Math.max(0, n - 73)]
+  const priceStructure: TechnicalIndicators['priceStructure'] =
+    price12hAgo < price6hAgo && price6hAgo < currentPrice ? 'uptrend' :
+    price12hAgo > price6hAgo && price6hAgo > currentPrice ? 'downtrend' : 'sideways'
+
+  // Weekly bias: is price higher or lower than 7 days ago?
+  const weeklyBias: TechnicalIndicators['weeklyBias'] =
+    weeklyPrices.length < 2 ? 'neutral' :
+    weeklyPrices[weeklyPrices.length - 1] > weeklyPrices[0] * 1.02 ? 'bullish' :
+    weeklyPrices[weeklyPrices.length - 1] < weeklyPrices[0] * 0.98 ? 'bearish' : 'neutral'
+
   return {
     high24h, low24h, distFromHigh, distFromLow,
     resistances, supports, nearestResistance, nearestSupport,
@@ -175,6 +192,7 @@ export function computeIndicators(
     rsi, rsiZone, momentum30m, momentum1h,
     atr, atrPct, volumeRatio,
     suggestedSlLong, suggestedSlShort,
+    priceStructure, weeklyBias,
     // legacy aliases
     sma4h: ema21,
     priceVsSma: priceVsEma21,
@@ -229,6 +247,20 @@ export async function fetchPriceHistory(symbol: string): Promise<{ prices: numbe
     return { prices, volumes }
   } catch {
     return { prices: [], volumes: [] }
+  }
+}
+
+export async function fetchWeeklyHistory(symbol: string): Promise<number[]> {
+  const id = GECKO_ID[symbol]
+  if (!id) return []
+  const url = `https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=7`
+  try {
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.prices as [number, number][]).map(([, p]) => p)
+  } catch {
+    return []
   }
 }
 

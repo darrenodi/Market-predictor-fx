@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { fetchAllPrices, fetchPriceHistory, computeIndicators } from '@/lib/prices'
+import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, computeIndicators } from '@/lib/prices'
 import { fetchAllNews, fetchWhaleAlerts } from '@/lib/news'
 import { generateSignals } from '@/lib/signals'
 import { notifyNewSignal } from '@/lib/telegram'
@@ -27,14 +27,18 @@ export async function GET(req: NextRequest) {
 
     const symbols = ['BTC', 'ETH', 'XAU', memeCoin]
 
-    // Parallel fetch everything
-    const [prices, news, whaleAlerts, { data: activeSignals }, ...priceHistories] = await Promise.all([
+    // Parallel fetch everything (daily + weekly history run simultaneously)
+    const [prices, news, whaleAlerts, { data: activeSignals }, ...histories] = await Promise.all([
       fetchAllPrices(memeCoin),
       fetchAllNews(symbols),
       fetchWhaleAlerts(),
       supabaseAdmin.from('signals').select('*').eq('status', 'active'),
       ...symbols.map(s => fetchPriceHistory(s)),
+      ...symbols.map(s => fetchWeeklyHistory(s)),
     ])
+
+    const priceHistories = histories.slice(0, symbols.length)
+    const weeklyHistories = histories.slice(symbols.length)
 
     // Build MarketData array with full technicals + previous signal context
     const marketData = symbols
@@ -43,13 +47,14 @@ export async function GET(req: NextRequest) {
         const existing = (activeSignals ?? []).find(sig => sig.symbol === sym)
         const price = prices[s]?.price ?? 0
         const { prices: ph, volumes: vh } = (priceHistories[i] as { prices: number[], volumes: number[] }) ?? { prices: [], volumes: [] }
+        const wp = (weeklyHistories[i] as number[]) ?? []
         return {
           symbol: sym,
           price,
           change_24h: prices[s]?.change_24h ?? 0,
           news: news[s] ?? [],
           whales: whaleAlerts.filter(w => w.symbol === s),
-          indicators: computeIndicators(ph, vh, price),
+          indicators: computeIndicators(ph, vh, price, wp),
           currentSignal: existing ? {
             direction: existing.direction,
             entry: existing.market_price,
