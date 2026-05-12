@@ -1,17 +1,22 @@
+'use client'
+
+import Link from 'next/link'
 import Image from 'next/image'
-import { BarChart2, GitCompare, Briefcase, Bell, Newspaper, Settings, Plus, LogOut } from 'lucide-react'
+import { usePathname } from 'next/navigation'
+import { BarChart2, Calculator, Briefcase, Bell, Newspaper, Settings, Plus, LogOut } from 'lucide-react'
 
 const NAV_ITEMS = [
-  { icon: BarChart2, label: 'Dashboard', active: true },
-  { icon: GitCompare, label: 'Compare' },
-  { icon: Briefcase, label: 'Portfolio' },
-  { icon: Bell, label: 'Alerts' },
-  { icon: Newspaper, label: 'News' },
-  { icon: Settings, label: 'Settings' },
+  { icon: BarChart2,  label: 'Dashboard',  href: '/' },
+  { icon: Calculator, label: 'Calculator', href: '/calculator' },
+  { icon: Briefcase,  label: 'Portfolio',  href: '#' },
+  { icon: Bell,       label: 'Alerts',     href: '#' },
+  { icon: Newspaper,  label: 'News',       href: '#' },
+  { icon: Settings,   label: 'Settings',   href: '#' },
 ]
 
-
 export default function Sidebar() {
+  const pathname = usePathname()
+
   return (
     <aside className="hidden lg:flex w-52 min-w-[208px] bg-[#0a1525] border-r border-[#1e3a5f] flex-col h-full">
       {/* Logo */}
@@ -22,19 +27,23 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 space-y-0.5">
-        {NAV_ITEMS.map(({ icon: Icon, label, active }) => (
-          <button
-            key={label}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              active
-                ? 'bg-[#0a2e1a] text-[#22c55e]'
-                : 'text-gray-400 hover:text-white hover:bg-[#0d1a2e]'
-            }`}
-          >
-            <Icon size={18} />
-            {label}
-          </button>
-        ))}
+        {NAV_ITEMS.map(({ icon: Icon, label, href }) => {
+          const active = href !== '#' && (href === '/' ? pathname === '/' : pathname.startsWith(href))
+          return (
+            <Link
+              key={label}
+              href={href}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                active
+                  ? 'bg-[#0a2e1a] text-[#22c55e]'
+                  : 'text-gray-400 hover:text-white hover:bg-[#0d1a2e]'
+              }`}
+            >
+              <Icon size={18} />
+              {label}
+            </Link>
+          )
+        })}
       </nav>
 
       {/* Portfolio Balance */}
@@ -55,7 +64,6 @@ export default function Sidebar() {
             <span>☾</span>
             <span>Dark Mode</span>
           </div>
-          {/* Toggle — always on */}
           <div className="w-9 h-5 bg-[#16a34a] rounded-full flex items-center justify-end px-0.5 cursor-default">
             <div className="w-4 h-4 bg-white rounded-full shadow" />
           </div>
