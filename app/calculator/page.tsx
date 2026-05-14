@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Image from 'next/image'
 import { Bell, AlertTriangle } from 'lucide-react'
 import Sidebar from '@/components/Sidebar'
@@ -28,12 +28,28 @@ function fmtPct(n: number): string {
   return (n >= 0 ? '+' : '') + formatted
 }
 
+const XAF_RATE = 580
+
+function fmtXAF(usd: number): string {
+  if (!isFinite(usd) || isNaN(usd)) return '—'
+  const n = usd * XAF_RATE
+  if (Math.abs(n) >= 1_000_000_000_000) return 'XAF ' + (n / 1_000_000_000_000).toFixed(2) + 'T'
+  if (Math.abs(n) >= 1_000_000_000) return 'XAF ' + (n / 1_000_000_000).toFixed(2) + 'B'
+  if (Math.abs(n) >= 1_000_000) return 'XAF ' + (n / 1_000_000).toFixed(2) + 'M'
+  if (Math.abs(n) >= 1_000) return 'XAF ' + (n / 1_000).toFixed(1) + 'K'
+  return 'XAF ' + Math.round(n).toLocaleString()
+}
+
 export default function CalculatorPage() {
   const [entryPrice, setEntryPrice] = useState(81224)
   const [balance, setBalance] = useState(1000)
   const [leverage, setLeverage] = useState(10)
   const [direction, setDirection] = useState<'long' | 'short'>('long')
   const [moveAmount, setMoveAmount] = useState(1000)
+  const [tradesPerDay, setTradesPerDay] = useState(10)
+  const [tradingDays, setTradingDays] = useState(30)
+  const [makerFee, setMakerFee] = useState(0)
+  const [takerFee, setTakerFee] = useState(0)
 
   const isLong = direction === 'long'
 
@@ -53,6 +69,27 @@ export default function CalculatorPage() {
 
   // Warning: target is on the liquidation side (trade wiped before TP)
   const isInvalidSetup = isLong ? targetPrice <= liqPrice : targetPrice >= liqPrice
+
+  // Compound projection — balance grows each trade, fees deducted from position size
+  const projection = useMemo(() => {
+    if (entryPrice <= 0 || balance <= 0 || moveAmount <= 0) return []
+    const movePctDecimal = moveAmount / entryPrice
+    const feeRate = (makerFee + takerFee) / 100
+    let bal = balance
+    const rows: { day: number; dailyProfit: number; balance: number }[] = []
+    for (let d = 1; d <= Math.min(tradingDays, 365); d++) {
+      let dailyProfit = 0
+      for (let t = 0; t < tradesPerDay; t++) {
+        const posSize = bal * leverage
+        const gross = movePctDecimal * posSize
+        const fee = posSize * feeRate
+        bal += gross - fee
+        dailyProfit += gross - fee
+      }
+      rows.push({ day: d, dailyProfit, balance: bal })
+    }
+    return rows
+  }, [entryPrice, balance, leverage, moveAmount, tradesPerDay, tradingDays, makerFee, takerFee])
 
   function handleTargetInput(val: number) {
     const move = isLong ? val - entryPrice : entryPrice - val
@@ -305,6 +342,142 @@ export default function CalculatorPage() {
             </div>
 
           </div>
+
+          {/* ── COMPOUND PROJECTION ── */}
+          <div className="max-w-5xl mx-auto mt-5 lg:mt-6">
+            <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-5">
+
+              <h2 className="text-base font-bold text-white mb-1">Compound Growth Projection</h2>
+              <p className="text-xs text-gray-500 mb-5">Assumes every trade hits TP at the move % above. Balance compounds after each trade.</p>
+
+              {/* Controls */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1.5">Trades per day</label>
+                  <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2 focus-within:border-[#22c55e] transition-colors">
+                    <input
+                      type="number"
+                      value={tradesPerDay}
+                      onChange={e => setTradesPerDay(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="flex-1 bg-transparent text-white text-sm outline-none min-w-0"
+                      min={1}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1.5">Trading days</label>
+                  <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2 focus-within:border-[#22c55e] transition-colors">
+                    <input
+                      type="number"
+                      value={tradingDays}
+                      onChange={e => setTradingDays(Math.max(1, Math.min(365, parseInt(e.target.value) || 1)))}
+                      className="flex-1 bg-transparent text-white text-sm outline-none min-w-0"
+                      min={1}
+                      max={365}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1.5">Maker fee (%)</label>
+                  <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2 focus-within:border-[#22c55e] transition-colors">
+                    <input
+                      type="number"
+                      value={makerFee}
+                      onChange={e => setMakerFee(Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="flex-1 bg-transparent text-white text-sm outline-none min-w-0"
+                      min={0}
+                      step={0.01}
+                    />
+                    <span className="text-gray-500 text-xs ml-1">%</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1.5">Taker fee (%)</label>
+                  <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2 focus-within:border-[#22c55e] transition-colors">
+                    <input
+                      type="number"
+                      value={takerFee}
+                      onChange={e => setTakerFee(Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="flex-1 bg-transparent text-white text-sm outline-none min-w-0"
+                      min={0}
+                      step={0.01}
+                    />
+                    <span className="text-gray-500 text-xs ml-1">%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Summary stats */}
+              {projection.length > 0 && (() => {
+                const last = projection[projection.length - 1]
+                const totalProfit = last.balance - balance
+                const netPerTrade = projection[0].dailyProfit / tradesPerDay
+                return (
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+                    <div className="bg-[#060d1a] border border-[#1e3a5f] rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">Net per trade</p>
+                      <p className="text-sm font-bold text-[#22c55e]">{fmtUSD(netPerTrade, true)}</p>
+                      <p className="text-xs text-gray-600 mt-0.5">{fmtXAF(netPerTrade)}</p>
+                    </div>
+                    <div className="bg-[#060d1a] border border-[#1e3a5f] rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">Day 1 profit</p>
+                      <p className="text-sm font-bold text-[#22c55e]">{fmtUSD(projection[0].dailyProfit, true)}</p>
+                      <p className="text-xs text-gray-600 mt-0.5">{fmtXAF(projection[0].dailyProfit)}</p>
+                    </div>
+                    <div className="bg-[#060d1a] border border-[#1e3a5f] rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">Total profit (day {tradingDays})</p>
+                      <p className="text-sm font-bold text-[#22c55e]">{fmtUSD(totalProfit, true)}</p>
+                      <p className="text-xs text-gray-600 mt-0.5">{fmtXAF(totalProfit)}</p>
+                    </div>
+                    <div className="bg-[#060d1a] border border-[#1e3a5f] rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">Final balance (day {tradingDays})</p>
+                      <p className="text-sm font-bold text-white">{fmtUSD(last.balance, true)}</p>
+                      <p className="text-xs text-gray-600 mt-0.5">{fmtXAF(last.balance)}</p>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Table */}
+              {projection.length > 0 ? (
+                <div className="overflow-auto max-h-96 rounded-lg border border-[#1e3a5f]">
+                  <table className="w-full text-sm border-collapse">
+                    <thead className="sticky top-0 bg-[#0a1525] z-10">
+                      <tr>
+                        <th className="text-left text-xs text-gray-400 font-medium px-4 py-2.5 border-b border-[#1e3a5f]">Day</th>
+                        <th className="text-right text-xs text-gray-400 font-medium px-4 py-2.5 border-b border-[#1e3a5f]">Daily Profit</th>
+                        <th className="text-right text-xs text-gray-400 font-medium px-4 py-2.5 border-b border-[#1e3a5f]">Balance ($)</th>
+                        <th className="text-right text-xs text-gray-400 font-medium px-4 py-2.5 border-b border-[#1e3a5f]">Balance (XAF)</th>
+                        <th className="text-right text-xs text-gray-400 font-medium px-4 py-2.5 border-b border-[#1e3a5f]">Total Gain</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {projection.map((row, i) => {
+                        const gain = row.balance - balance
+                        const isEven = i % 2 === 0
+                        return (
+                          <tr key={row.day} className={isEven ? 'bg-[#060d1a]/40' : ''}>
+                            <td className="px-4 py-2 text-gray-400 text-xs font-medium">{row.day}</td>
+                            <td className="px-4 py-2 text-right text-[#22c55e] text-xs font-medium">{fmtUSD(row.dailyProfit, true)}</td>
+                            <td className="px-4 py-2 text-right text-white text-xs">{fmtUSD(row.balance, true)}</td>
+                            <td className="px-4 py-2 text-right text-gray-300 text-xs">{fmtXAF(row.balance)}</td>
+                            <td className="px-4 py-2 text-right text-[#22c55e] text-xs">+{fmtUSD(gain, true)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 text-center py-6">Enter a valid asset price, balance, and move amount above to see the projection.</p>
+              )}
+
+              <p className="text-xs text-gray-600 mt-4 leading-relaxed">
+                Estimates only — assumes all trades hit TP. Does not account for slippage, SL hits, funding rates, or exchange-specific margin rules. $1 = {XAF_RATE} XAF.
+              </p>
+            </div>
+          </div>
+
         </div>
       </main>
     </div>
