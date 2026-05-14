@@ -3,7 +3,10 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { BarChart2, Calculator, Briefcase, Bell, Newspaper, Settings, Plus, LogOut } from 'lucide-react'
+
+const STARTING_BALANCE = 10_000
 
 const NAV_ITEMS = [
   { icon: BarChart2,  label: 'Dashboard',  href: '/' },
@@ -16,6 +19,23 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const [balance, setBalance] = useState<number | null>(null)
+
+  useEffect(() => {
+    const load = () =>
+      fetch('/api/signals')
+        .then(r => r.json())
+        .then(d => { if (d.account_balance != null) setBalance(d.account_balance) })
+        .catch(() => {})
+    load()
+    const id = setInterval(load, 30_000)
+    return () => clearInterval(id)
+  }, [])
+
+  const displayBalance = balance ?? STARTING_BALANCE
+  const gainPct = ((displayBalance - STARTING_BALANCE) / STARTING_BALANCE) * 100
+  const gainColor = gainPct >= 0 ? 'text-[#22c55e]' : 'text-red-400'
+  const gainLabel = (gainPct >= 0 ? '+' : '') + gainPct.toFixed(2) + '%'
 
   return (
     <aside className="hidden lg:flex w-52 min-w-[208px] bg-[#0a1525] border-r border-[#1e3a5f] flex-col h-full">
@@ -49,8 +69,10 @@ export default function Sidebar() {
       {/* Portfolio Balance */}
       <div className="mx-3 mb-3 p-3.5 bg-[#0d1a2e] rounded-xl border border-[#1e3a5f]">
         <p className="text-xs text-gray-500 mb-0.5">Portfolio Balance</p>
-        <p className="text-white font-bold text-lg leading-tight">$24,560.00</p>
-        <p className="text-[#22c55e] text-xs mb-2">+3.68%</p>
+        <p className="text-white font-bold text-lg leading-tight">
+          ${displayBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </p>
+        <p className={`text-xs mb-2 ${gainColor}`}>{gainLabel}</p>
         <button className="w-full flex items-center justify-center gap-1.5 py-2 bg-[#162436] hover:bg-[#1e3a5f] text-gray-300 text-xs rounded-lg transition-colors">
           <Plus size={13} />
           Add Asset
