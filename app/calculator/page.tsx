@@ -434,6 +434,11 @@ export default function CalculatorPage() {
                       <p className="text-sm font-bold text-white">{fmtUSD(last.balance, true)}</p>
                       <p className="text-xs text-gray-600 mt-0.5">{fmtXAF(last.balance)}</p>
                     </div>
+                    <div className="bg-[#060d1a] border border-[#1e3a5f] rounded-lg p-3 col-span-2 lg:col-span-4">
+                      <p className="text-xs text-gray-500 mb-1">Total % return on initial balance</p>
+                      <p className="text-lg font-bold text-[#22c55e]">{fmtPct((totalProfit / balance) * 100)}</p>
+                      <p className="text-xs text-gray-600 mt-0.5">{fmtUSD(balance)} → {fmtUSD(last.balance, true)} over {tradingDays} days</p>
+                    </div>
                   </div>
                 )
               })()}
@@ -449,11 +454,13 @@ export default function CalculatorPage() {
                         <th className="text-right text-xs text-gray-400 font-medium px-4 py-2.5 border-b border-[#1e3a5f]">Balance ($)</th>
                         <th className="text-right text-xs text-gray-400 font-medium px-4 py-2.5 border-b border-[#1e3a5f]">Balance (XAF)</th>
                         <th className="text-right text-xs text-gray-400 font-medium px-4 py-2.5 border-b border-[#1e3a5f]">Total Gain</th>
+                        <th className="text-right text-xs text-gray-400 font-medium px-4 py-2.5 border-b border-[#1e3a5f]">% Win</th>
                       </tr>
                     </thead>
                     <tbody>
                       {projection.map((row, i) => {
                         const gain = row.balance - balance
+                        const gainPct = (gain / balance) * 100
                         const isEven = i % 2 === 0
                         return (
                           <tr key={row.day} className={isEven ? 'bg-[#060d1a]/40' : ''}>
@@ -462,6 +469,7 @@ export default function CalculatorPage() {
                             <td className="px-4 py-2 text-right text-white text-xs">{fmtUSD(row.balance, true)}</td>
                             <td className="px-4 py-2 text-right text-gray-300 text-xs">{fmtXAF(row.balance)}</td>
                             <td className="px-4 py-2 text-right text-[#22c55e] text-xs">+{fmtUSD(gain, true)}</td>
+                            <td className="px-4 py-2 text-right text-[#22c55e] text-xs font-semibold">{fmtPct(gainPct)}</td>
                           </tr>
                         )
                       })}
