@@ -85,7 +85,7 @@ function getSession(): { name: string; quality: string; note: string } {
   return { name: 'Asia', quality: 'LOW', note: 'Reduced volume — tight ranges, fake breakouts common, prefer counter-trend fades' }
 }
 
-function buildPrompt(assets: MarketData[], performance?: PerformanceSummary, accountBalance?: number): string {
+function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): string {
   const now = new Date().toUTCString()
   const session = getSession()
 
@@ -175,18 +175,10 @@ ${whaleLine}`
 
   const perfBlock = performance ? '\n' + formatPerformanceForPrompt(performance) + '\n' : ''
 
-  const balanceLine = accountBalance != null
-    ? `Account balance: $${accountBalance.toFixed(2)} — margin = balance × portfolio_pct%, position = margin × 75 (fixed)`
-    : ''
-
   return `You are an elite futures signal engine operating like a top-tier prop trader. Every asset gets a signal every 30 minutes — the next candle is where the trade plays out.
 
-CURRENT DATE & TIME: ${now}
-TODAY IS: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })} UTC
-Use today's date when assessing market conditions. Gold is near $4,600+, BTC above $90k — if your training data conflicts, trust the live prices provided below.
-
+Time: ${now}
 Session: ${session.name} [${session.quality}] — ${session.note}
-${balanceLine}
 ${perfBlock}
 
 ${assetBlocks}
@@ -194,7 +186,6 @@ ${assetBlocks}
 ━━━ YOUR JOB ━━━
 
 For EVERY asset, pick the highest-probability direction for the next 30 minutes and output a signal.
-Your goal is TP HITS. Winning trades compound the account. Losing trades shrink it. Choose quality over speculation.
 Only set confidence=0.0 if price action is genuinely ranging with zero directional edge (rare).
 
 DIRECTION — use all context in order:
@@ -212,18 +203,16 @@ TP/SL — use the pre-computed ATR-based levels:
 
 PREVIOUS SIGNAL — if the previous trade is winning and structure hasn't changed, keep direction.
 
-LEVERAGE & SIZING (FIXED RULES — DO NOT DEVIATE):
-  • Leverage is FIXED at 75× for every single trade. Always output leverage: 75.
-  • portfolio_pct controls how much account capital is risked as margin:
-      - Strong setup (weekly + structure + EMA all agree): 5–7%
-      - Good setup (2–3 factors agree): 3–5%
-      - Weak setup (mixed signals, session noise): 1–3%
-  • Calculation reminder: margin = balance × portfolio_pct% | position = margin × 75
+LEVERAGE & SIZING:
+  • Strong setup (weekly + structure + EMA all agree): 100–200x crypto / 30–50x gold
+  • Good setup (2–3 factors agree): 50–100x crypto / 15–30x gold
+  • Weak setup (mixed signals, session noise): 20–50x crypto / 10–15x gold
+  • portfolio_pct: 3–7
 
 CONFIDENCE:
-  • 0.8–1.0: all HTF + session + TA aligned — expect TP hit
-  • 0.6–0.79: majority of signals agree — good probability
-  • 0.5–0.59: mixed but best available direction — size small (low portfolio_pct)
+  • 0.8–1.0: all HTF + session + TA aligned
+  • 0.6–0.79: majority of signals agree
+  • 0.5–0.59: mixed but best available direction
   • 0.0: only if genuinely no edge (flat range, zero momentum, zero news)
 
 reasoning: 1 sentence — what the dominant signal is and why this direction wins right now.
@@ -235,7 +224,7 @@ Include ALL assets — use confidence=0.0 for skipped ones (they will be filtere
     {
       "symbol": "ASSET/USD",
       "direction": "long",
-      "leverage": 75,
+      "leverage": 50,
       "portfolio_pct": 5,
       "tp": 2368.00,
       "sl": 2315.00,
@@ -253,8 +242,8 @@ function isRateLimitError(err: unknown): boolean {
          msg.includes('resource exhausted') || msg.includes('too many requests')
 }
 
-export async function generateSignals(assets: MarketData[], performance?: PerformanceSummary, accountBalance?: number): Promise<GeneratedSignal[]> {
-  const prompt = buildPrompt(assets, performance, accountBalance)
+export async function generateSignals(assets: MarketData[], performance?: PerformanceSummary): Promise<GeneratedSignal[]> {
+  const prompt = buildPrompt(assets, performance)
   let lastError: unknown
 
   for (const modelId of MODELS) {
@@ -297,7 +286,7 @@ export async function generateSignals(assets: MarketData[], performance?: Perfor
           return null
         }
 
-        return { ...sig, tp, sl, leverage: 75 }
+        return { ...sig, tp, sl }
       }).filter((s): s is GeneratedSignal => s !== null)
 
       console.log(`[signals] ${validated.length}/${parsed.signals.length} valid signals via ${modelId}`)
