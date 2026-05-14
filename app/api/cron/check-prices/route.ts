@@ -7,7 +7,6 @@ import { Signal } from '@/types'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
-const FIXED_LEVERAGE = 75
 const TOPUP_AMOUNT = 10_000
 const TOPUP_THRESHOLD = 1_000
 
@@ -19,7 +18,7 @@ function isAuthorized(req: NextRequest): boolean {
 
 function calcPnl(signal: Signal, accountBalance: number): { tpPnl: number; slPnl: number; margin: number; position: number } {
   const margin = accountBalance * (signal.portfolio_pct / 100)
-  const position = margin * FIXED_LEVERAGE
+  const position = margin * signal.leverage
   const isLong = signal.direction === 'long'
   const entry = signal.market_price
 
@@ -85,7 +84,7 @@ export async function GET(req: NextRequest) {
           const msg = formatTPHit(signal) +
             `\n━━━━━━━━━━━━━━━━` +
             `\n💵 Margin used : $${margin.toFixed(2)} (${signal.portfolio_pct}%)` +
-            `\n📦 Position    : $${position.toFixed(2)} (${FIXED_LEVERAGE}×)` +
+            `\n📦 Position    : $${position.toFixed(2)} (${signal.leverage}×)` +
             `\n💰 Net profit  : +$${tpPnl.toFixed(2)}` +
             `\n🏦 New balance : $${accountBalance.toFixed(2)}`
           await sendMessage(groupId, msg)
@@ -105,7 +104,7 @@ export async function GET(req: NextRequest) {
           const msg = formatSLHit(signal) +
             `\n━━━━━━━━━━━━━━━━` +
             `\n💵 Margin used : $${margin.toFixed(2)} (${signal.portfolio_pct}%)` +
-            `\n📦 Position    : $${position.toFixed(2)} (${FIXED_LEVERAGE}×)` +
+            `\n📦 Position    : $${position.toFixed(2)} (${signal.leverage}×)` +
             `\n💸 Net loss    : -$${slPnl.toFixed(2)}` +
             `\n🏦 New balance : $${accountBalance.toFixed(2)}`
           await sendMessage(groupId, msg)
