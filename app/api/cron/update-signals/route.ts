@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
     const { data: config } = await supabaseAdmin.from('config').select('key, value')
     const cfg = Object.fromEntries((config ?? []).map(r => [r.key, r.value]))
     const memeCoin: string = cfg.meme_coin ?? 'DOGE'
+    const accountBalance: number = parseFloat(cfg.account_balance ?? '10000')
 
     const symbols = ['BTC', 'ETH', 'XAU', memeCoin]
 
@@ -73,8 +74,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'No price data available' }, { status: 500 })
     }
 
-    // Generate signals via Gemini — pass performance so AI learns from past results
-    const signals = await generateSignals(marketData, performance ?? undefined)
+    // Generate signals via Gemini — pass performance + balance so AI knows trade scale
+    const signals = await generateSignals(marketData, performance ?? undefined, accountBalance)
 
     // Only expire signals older than 28 minutes — don't wipe fresh ones
     const cutoff = new Date(Date.now() - 28 * 60 * 1000).toISOString()

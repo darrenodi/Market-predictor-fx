@@ -218,3 +218,4 @@ out/
 .env.production.local
 .env.development.local
 .env.test.local
+.vercel
