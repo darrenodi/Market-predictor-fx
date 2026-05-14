@@ -5,27 +5,28 @@ import Image from 'next/image'
 import { Bell, AlertTriangle } from 'lucide-react'
 import Sidebar from '@/components/Sidebar'
 
-function fmtUSD(n: number, compact = false): string {
+function fmtUSD(n: number, _compact = false): string {
   if (!isFinite(n) || isNaN(n)) return '—'
-  if (compact && Math.abs(n) >= 1_000_000_000) return '$' + (n / 1_000_000_000).toFixed(2) + 'B'
-  if (compact && Math.abs(n) >= 1_000_000) return '$' + (n / 1_000_000).toFixed(2) + 'M'
-  if (compact && Math.abs(n) >= 1_000) return '$' + (n / 1_000).toFixed(2) + 'K'
-  if (Math.abs(n) < 0.001) return '$' + n.toFixed(6)
-  if (Math.abs(n) < 1) return '$' + n.toFixed(4)
+  const a = Math.abs(n)
+  if (a >= 1_000_000_000_000) return '$' + (n / 1_000_000_000_000).toFixed(2) + 'T'
+  if (a >= 1_000_000_000)     return '$' + (n / 1_000_000_000).toFixed(2) + 'B'
+  if (a >= 1_000_000)         return '$' + (n / 1_000_000).toFixed(2) + 'M'
+  if (a >= 1_000)             return '$' + (n / 1_000).toFixed(2) + 'K'
+  if (a < 0.001)              return '$' + n.toFixed(6)
+  if (a < 1)                  return '$' + n.toFixed(4)
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function fmtPct(n: number): string {
   if (!isFinite(n) || isNaN(n)) return '—'
-  const abs = Math.abs(n)
-  const formatted = abs >= 1_000_000
-    ? (n / 1_000_000).toFixed(2) + 'M%'
-    : abs >= 10_000
-    ? (n / 1_000).toFixed(1) + 'K%'
-    : abs >= 100
-    ? n.toFixed(1) + '%'
-    : n.toFixed(2) + '%'
-  return (n >= 0 ? '+' : '') + formatted
+  const a = Math.abs(n)
+  const s = a >= 1_000_000_000_000 ? (n / 1_000_000_000_000).toFixed(2) + 'T%'
+          : a >= 1_000_000_000     ? (n / 1_000_000_000).toFixed(2) + 'B%'
+          : a >= 1_000_000         ? (n / 1_000_000).toFixed(2) + 'M%'
+          : a >= 10_000            ? (n / 1_000).toFixed(1) + 'K%'
+          : a >= 100               ? n.toFixed(1) + '%'
+          :                          n.toFixed(2) + '%'
+  return (n >= 0 ? '+' : '') + s
 }
 
 const XAF_RATE = 580
