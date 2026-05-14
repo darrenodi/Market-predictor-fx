@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { MarketData, TechnicalIndicators } from '@/types'
+import { PerformanceSummary, formatPerformanceForPrompt } from '@/lib/performance'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
 
@@ -84,7 +85,7 @@ function getSession(): { name: string; quality: string; note: string } {
   return { name: 'Asia', quality: 'LOW', note: 'Reduced volume — tight ranges, fake breakouts common, prefer counter-trend fades' }
 }
 
-function buildPrompt(assets: MarketData[]): string {
+function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): string {
   const now = new Date().toUTCString()
   const session = getSession()
 
@@ -172,10 +173,13 @@ ${newsLines}
 ${whaleLine}`
   }).join('\n\n')
 
+  const perfBlock = performance ? '\n' + formatPerformanceForPrompt(performance) + '\n' : ''
+
   return `You are an elite futures signal engine operating like a top-tier prop trader. Every asset gets a signal every 30 minutes — the next candle is where the trade plays out.
 
 Time: ${now}
 Session: ${session.name} [${session.quality}] — ${session.note}
+${perfBlock}
 
 ${assetBlocks}
 
@@ -238,8 +242,8 @@ function isRateLimitError(err: unknown): boolean {
          msg.includes('resource exhausted') || msg.includes('too many requests')
 }
 
-export async function generateSignals(assets: MarketData[]): Promise<GeneratedSignal[]> {
-  const prompt = buildPrompt(assets)
+export async function generateSignals(assets: MarketData[], performance?: PerformanceSummary): Promise<GeneratedSignal[]> {
+  const prompt = buildPrompt(assets, performance)
   let lastError: unknown
 
   for (const modelId of MODELS) {

@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase'
 import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, computeIndicators } from '@/lib/prices'
 import { fetchAllNews, fetchWhaleAlerts } from '@/lib/news'
 import { generateSignals } from '@/lib/signals'
+import { fetchPerformanceSummary } from '@/lib/performance'
 import { notifyNewSignal } from '@/lib/telegram'
 
 export const dynamic = 'force-dynamic'
@@ -27,12 +28,13 @@ export async function GET(req: NextRequest) {
 
     const symbols = ['BTC', 'ETH', 'XAU', memeCoin]
 
-    // Parallel fetch everything (daily + weekly history run simultaneously)
-    const [prices, news, whaleAlerts, { data: activeSignals }, ...histories] = await Promise.all([
+    // Parallel fetch everything (daily + weekly history + performance run simultaneously)
+    const [prices, news, whaleAlerts, { data: activeSignals }, performance, ...histories] = await Promise.all([
       fetchAllPrices(memeCoin),
       fetchAllNews(symbols),
       fetchWhaleAlerts(),
       supabaseAdmin.from('signals').select('*').eq('status', 'active'),
+      fetchPerformanceSummary(),
       ...symbols.map(s => fetchPriceHistory(s)),
       ...symbols.map(s => fetchWeeklyHistory(s)),
     ])
@@ -71,8 +73,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'No price data available' }, { status: 500 })
     }
 
-    // Generate signals via Gemini
-    const signals = await generateSignals(marketData)
+    // Generate signals via Gemini — pass performance so AI learns from past results
+    const signals = await generateSignals(marketData, performance ?? undefined)
 
     // Only expire signals older than 28 minutes — don't wipe fresh ones
     const cutoff = new Date(Date.now() - 28 * 60 * 1000).toISOString()
