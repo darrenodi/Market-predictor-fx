@@ -16,6 +16,7 @@ export default function Dashboard() {
   const [signals, setSignals] = useState<Signal[]>([])
   const [prices, setPrices] = useState<PriceMap>({})
   const [memeCoin, setMemeCoin] = useState('DOGE')
+  const [accountBalance, setAccountBalance] = useState(10_000)
   const [loading, setLoading] = useState(true)
 
   const fetchData = useCallback(async () => {
@@ -27,6 +28,7 @@ export default function Dashboard() {
     if (sigRes.status === 'fulfilled') {
       setSignals(sigRes.value.signals ?? [])
       setMemeCoin(sigRes.value.meme_coin ?? 'DOGE')
+      if (sigRes.value.account_balance != null) setAccountBalance(sigRes.value.account_balance)
     }
 
     if (priceRes.status === 'fulfilled') {
@@ -114,7 +116,7 @@ export default function Dashboard() {
           </div>
 
           {/* Overview */}
-          <Overview signals={signals} loading={loading} />
+          <Overview signals={signals} loading={loading} accountBalance={accountBalance} />
 
           {/* Signal History */}
           <SignalHistory />

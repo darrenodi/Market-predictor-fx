@@ -28,6 +28,7 @@ export async function GET() {
     return NextResponse.json({
       signals: Array.from(latestBySymbol.values()),
       meme_coin: configMap.meme_coin ?? 'DOGE',
+      account_balance: parseFloat(configMap.account_balance ?? '10000'),
     })
   } catch (err) {
     console.error('/api/signals error:', err)

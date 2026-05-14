@@ -3,9 +3,8 @@ import { Signal } from '@/types'
 interface Props {
   signals: Signal[]
   loading: boolean
+  accountBalance: number
 }
-
-const PORTFOLIO_BALANCE = 24_560
 
 function fmt(n: number): string {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -60,7 +59,7 @@ function GaugeChart({ pct }: { pct: number }) {
   )
 }
 
-export default function Overview({ signals, loading }: Props) {
+export default function Overview({ signals, loading, accountBalance }: Props) {
   if (loading) {
     return (
       <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-5 animate-pulse">
@@ -78,13 +77,13 @@ export default function Overview({ signals, loading }: Props) {
   }
 
   const active = signals.filter(s => s.status === 'active')
-  const marginUsed = active.reduce((sum, s) => sum + PORTFOLIO_BALANCE * (s.portfolio_pct / 100), 0)
-  const availableMargin = PORTFOLIO_BALANCE - marginUsed
+  const marginUsed = active.reduce((sum, s) => sum + accountBalance * (s.portfolio_pct / 100), 0)
+  const availableMargin = accountBalance - marginUsed
   const potentialExposure = active.reduce(
-    (sum, s) => sum + PORTFOLIO_BALANCE * (s.portfolio_pct / 100) * s.leverage,
+    (sum, s) => sum + accountBalance * (s.portfolio_pct / 100) * s.leverage,
     0,
   )
-  const marginUsagePct = (marginUsed / PORTFOLIO_BALANCE) * 100
+  const marginUsagePct = (marginUsed / accountBalance) * 100
 
   let riskLabel = 'Low'
   let riskColor = 'text-[#22c55e]'
@@ -98,7 +97,7 @@ export default function Overview({ signals, loading }: Props) {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 items-center">
         <div>
           <p className="text-xs text-gray-400 mb-1">Total Portfolio Size</p>
-          <p className="text-white font-bold">${fmt(PORTFOLIO_BALANCE)}</p>
+          <p className="text-white font-bold">${fmt(accountBalance)}</p>
         </div>
         <div>
           <p className="text-xs text-gray-400 mb-1">Potential Exposure</p>
