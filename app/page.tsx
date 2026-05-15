@@ -8,8 +8,10 @@ import AssetCard from '@/components/AssetCard'
 import Overview from '@/components/Overview'
 import SignalHistory from '@/components/SignalHistory'
 import { Signal, PriceInfo } from '@/types'
+import type { SymbolStats } from '@/app/api/signals/route'
 
 type PriceMap = Record<string, PriceInfo>
+type StatsMap = Record<string, SymbolStats>
 
 
 export default function Dashboard() {
@@ -17,6 +19,7 @@ export default function Dashboard() {
   const [prices, setPrices] = useState<PriceMap>({})
   const [memeCoin, setMemeCoin] = useState('DOGE')
   const [accountBalance, setAccountBalance] = useState(10_000)
+  const [stats, setStats] = useState<StatsMap>({})
   const [loading, setLoading] = useState(true)
 
   const fetchData = useCallback(async () => {
@@ -29,6 +32,7 @@ export default function Dashboard() {
       setSignals(sigRes.value.signals ?? [])
       setMemeCoin(sigRes.value.meme_coin ?? 'DOGE')
       if (sigRes.value.account_balance != null) setAccountBalance(sigRes.value.account_balance)
+      if (sigRes.value.stats) setStats(sigRes.value.stats)
     }
 
     if (priceRes.status === 'fulfilled') {
@@ -109,6 +113,7 @@ export default function Dashboard() {
                   currentPrice={priceInfo?.price}
                   change24h={priceInfo?.change_24h}
                   priceHistory={priceInfo?.history ?? []}
+                  stats={stats[symbol]}
                   loading={loading}
                 />
               )

@@ -3,6 +3,7 @@
 import { Star } from 'lucide-react'
 import SparklineChart from './SparklineChart'
 import { Signal } from '@/types'
+import type { SymbolStats } from '@/app/api/signals/route'
 
 interface Props {
   symbol: string
@@ -10,6 +11,7 @@ interface Props {
   currentPrice?: number
   change24h?: number
   priceHistory: number[]
+  stats?: SymbolStats
   loading: boolean
 }
 
@@ -56,7 +58,7 @@ function fmtDate(dateStr: string): string {
   })
 }
 
-export default function AssetCard({ symbol, signal, currentPrice, change24h, priceHistory, loading }: Props) {
+export default function AssetCard({ symbol, signal, currentPrice, change24h, priceHistory, stats, loading }: Props) {
   const base = symbol.replace('/USD', '')
   const cfg = ASSET[base] ?? { bg: '#22c55e', text: 'white', symbol: base[0] ?? '?', tv: `${base}USD` }
   const displayPrice = currentPrice ?? signal?.market_price ?? 0
@@ -217,6 +219,40 @@ export default function AssetCard({ symbol, signal, currentPrice, change24h, pri
           placeholder="--"
           className="w-full bg-[#0a1220] border border-[#1e3a5f] text-white rounded-lg px-3 py-2 text-sm outline-none"
         />
+      </div>
+
+      {/* 24h outcome stats */}
+      <div className="bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2.5">
+        <p className="text-[10px] text-gray-500 mb-1.5 uppercase tracking-wide">
+          Last {stats?.windowHours ?? 24}h outcomes
+        </p>
+        {stats && stats.total > 0 ? (
+          <div className="flex items-center justify-between gap-1 text-xs">
+            <div className="flex flex-col items-center">
+              <span className="text-[#22c55e] font-bold text-sm">{stats.tp}</span>
+              <span className="text-gray-500 text-[10px]">TP Hit</span>
+            </div>
+            <div className="w-px h-8 bg-[#1e3a5f]" />
+            <div className="flex flex-col items-center">
+              <span className="text-red-400 font-bold text-sm">{stats.sl}</span>
+              <span className="text-gray-500 text-[10px]">SL Hit</span>
+            </div>
+            <div className="w-px h-8 bg-[#1e3a5f]" />
+            <div className="flex flex-col items-center">
+              <span className="text-yellow-400 font-bold text-sm">{stats.expired}</span>
+              <span className="text-gray-500 text-[10px]">Expired</span>
+            </div>
+            <div className="w-px h-8 bg-[#1e3a5f]" />
+            <div className="flex flex-col items-center">
+              <span className="text-white font-bold text-sm">
+                {stats.total > 0 ? Math.round((stats.tp / stats.total) * 100) : 0}%
+              </span>
+              <span className="text-gray-500 text-[10px]">Win rate</span>
+            </div>
+          </div>
+        ) : (
+          <p className="text-[11px] text-gray-600">No closed trades yet</p>
+        )}
       </div>
 
       {/* View Chart */}
