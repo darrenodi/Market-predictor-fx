@@ -49,8 +49,7 @@ export default function CalculatorPage() {
   const [moveAmount, setMoveAmount] = useState(1000)
   const [tradesPerDay, setTradesPerDay] = useState(10)
   const [tradingDays, setTradingDays] = useState(30)
-  const [makerFee, setMakerFee] = useState(0)
-  const [takerFee, setTakerFee] = useState(0)
+  const [marketFee, setMarketFee] = useState(0.01)
   const [profitRemoval, setProfitRemoval] = useState(0)
 
   const isLong = direction === 'long'
@@ -76,7 +75,7 @@ export default function CalculatorPage() {
   const projection = useMemo(() => {
     if (entryPrice <= 0 || balance <= 0 || moveAmount <= 0) return []
     const movePctDecimal = moveAmount / entryPrice
-    const feeRate = (makerFee + takerFee) / 100
+    const feeRate = marketFee / 100
     const removalRate = profitRemoval / 100
     let bal = balance
     let totalRemoved = 0
@@ -96,7 +95,7 @@ export default function CalculatorPage() {
       rows.push({ day: d, dailyProfit, dailySaved, balance: bal, totalRemoved, totalValue: bal + totalRemoved })
     }
     return rows
-  }, [entryPrice, balance, leverage, moveAmount, tradesPerDay, tradingDays, makerFee, takerFee, profitRemoval])
+  }, [entryPrice, balance, leverage, moveAmount, tradesPerDay, tradingDays, marketFee, profitRemoval])
 
   function handleTargetInput(val: number) {
     const move = isLong ? val - entryPrice : entryPrice - val
@@ -401,32 +400,19 @@ export default function CalculatorPage() {
                   <p className="text-[10px] text-gray-600 mt-1">banked each trade, added to final value</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1.5">Maker fee (%)</label>
+                  <label className="text-xs text-gray-400 block mb-1.5">Market order fee (%)</label>
                   <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2 focus-within:border-[#22c55e] transition-colors">
                     <input
                       type="number"
-                      value={makerFee}
-                      onChange={e => setMakerFee(Math.max(0, parseFloat(e.target.value) || 0))}
+                      value={marketFee}
+                      onChange={e => setMarketFee(Math.max(0, parseFloat(e.target.value) || 0))}
                       className="flex-1 bg-transparent text-white text-sm outline-none min-w-0"
                       min={0}
-                      step={0.01}
+                      step={0.001}
                     />
                     <span className="text-gray-500 text-xs ml-1">%</span>
                   </div>
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400 block mb-1.5">Taker fee (%)</label>
-                  <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2 focus-within:border-[#22c55e] transition-colors">
-                    <input
-                      type="number"
-                      value={takerFee}
-                      onChange={e => setTakerFee(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="flex-1 bg-transparent text-white text-sm outline-none min-w-0"
-                      min={0}
-                      step={0.01}
-                    />
-                    <span className="text-gray-500 text-xs ml-1">%</span>
-                  </div>
+                  <p className="text-[10px] text-gray-600 mt-1">open only — TP limit order = $0</p>
                 </div>
               </div>
 
