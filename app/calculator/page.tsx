@@ -43,10 +43,10 @@ function fmtXAF(usd: number): string {
 
 export default function CalculatorPage() {
   const [entryPrice, setEntryPrice] = useState(81224)
-  const [balance, setBalance] = useState(1000)
-  const [leverage, setLeverage] = useState(10)
+  const [balance, setBalance] = useState(50)
+  const [leverage, setLeverage] = useState(50)
   const [direction, setDirection] = useState<'long' | 'short'>('long')
-  const [moveAmount, setMoveAmount] = useState(1000)
+  const [moveAmount, setMoveAmount] = useState(50)
   const [tradesPerDay, setTradesPerDay] = useState(10)
   const [tradingDays, setTradingDays] = useState(30)
   const [marketFee, setMarketFee] = useState(0.02)
@@ -175,7 +175,17 @@ export default function CalculatorPage() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs text-gray-400">Leverage</label>
-                  <span className="text-[#22c55e] font-bold text-lg leading-none">{leverage}×</span>
+                  <div className="flex items-center gap-1 bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-2 py-0.5 focus-within:border-[#22c55e] transition-colors">
+                    <input
+                      type="number"
+                      value={leverage}
+                      onChange={e => setLeverage(Math.min(500, Math.max(1, parseInt(e.target.value) || 1)))}
+                      className="w-14 bg-transparent text-[#22c55e] font-bold text-base outline-none text-right"
+                      min={1}
+                      max={500}
+                    />
+                    <span className="text-[#22c55e] font-bold text-base">×</span>
+                  </div>
                 </div>
                 <input
                   type="range"
