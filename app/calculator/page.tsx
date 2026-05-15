@@ -49,7 +49,7 @@ export default function CalculatorPage() {
   const [moveAmount, setMoveAmount] = useState(1000)
   const [tradesPerDay, setTradesPerDay] = useState(10)
   const [tradingDays, setTradingDays] = useState(30)
-  const [marketFee, setMarketFee] = useState(0.01)
+  const [marketFee, setMarketFee] = useState(0.02)
   const [profitRemoval, setProfitRemoval] = useState(0)
 
   const isLong = direction === 'long'
@@ -65,7 +65,8 @@ export default function CalculatorPage() {
   const liqDist = Math.abs(entryPrice - liqPrice)
   const liqDistPct = entryPrice > 0 ? (liqDist / entryPrice) * 100 : 0
   const movePct = entryPrice > 0 ? (moveAmount / entryPrice) * 100 : 0
-  const profit = entryPrice > 0 ? (moveAmount / entryPrice) * positionSize : 0
+  const fee = positionSize * (marketFee / 100)
+  const profit = entryPrice > 0 ? (moveAmount / entryPrice) * positionSize - fee : 0
   const roi = balance > 0 ? (profit / balance) * 100 : 0
 
   // Warning: target is on the liquidation side (trade wiped before TP)
@@ -328,7 +329,7 @@ export default function CalculatorPage() {
                 <p className="text-xs text-gray-500 mb-1">Potential Profit</p>
                 <p className="text-2xl font-bold text-[#22c55e]">{fmtUSD(profit, true)}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {movePct.toFixed(2)}% move × {fmtUSD(positionSize, true)} position
+                  {movePct.toFixed(2)}% move × {fmtUSD(positionSize, true)} − {fmtUSD(fee)} fee ({marketFee}%)
                 </p>
               </div>
 
@@ -400,7 +401,7 @@ export default function CalculatorPage() {
                   <p className="text-[10px] text-gray-600 mt-1">banked each trade, added to final value</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1.5">Market order fee (%)</label>
+                  <label className="text-xs text-gray-400 block mb-1.5">Fee per trade (%)</label>
                   <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2 focus-within:border-[#22c55e] transition-colors">
                     <input
                       type="number"
@@ -412,7 +413,7 @@ export default function CalculatorPage() {
                     />
                     <span className="text-gray-500 text-xs ml-1">%</span>
                   </div>
-                  <p className="text-[10px] text-gray-600 mt-1">open only — TP limit order = $0</p>
+                  <p className="text-[10px] text-gray-600 mt-1">deducted from position size each trade</p>
                 </div>
               </div>
 
