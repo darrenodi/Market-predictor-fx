@@ -132,7 +132,7 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
       const isGold = a.symbol === 'XAU/USD'
       const minSlPct = isGold ? 0.0025 : 0.005   // 0.25% gold | 0.5% crypto
       const slDist = Math.max(atr * 2.5, a.price * minSlPct)
-      const tpDist = slDist * 2                    // 2:1 R/R always maintained
+      const tpDist = slDist * 1.5                  // 1.5:1 R/R — TP closer, higher hit rate
 
       const longTp  = a.price + tpDist
       const longSl  = a.price - slDist
@@ -146,10 +146,10 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
       const trendDir = a.price >= ind.ema50 ? 'LONG' : 'SHORT'
       const trendNote = `preferred direction: ${trendDir} (price ${a.price >= ind.ema50 ? 'above' : 'below'} EMA50 — counter-trend needs strong confluence)`
 
-      slTpGuide = `  PRE-COMPUTED TP/SL for 30-min scalp (2:1 R/R, min SL=${(minSlPct * 100).toFixed(2)}% of price):
-    IF LONG : TP=${plain(cappedLongTp)} | SL=${plain(longSl)} | R/R=2:1
-    IF SHORT: TP=${plain(cappedShortTp)} | SL=${plain(shortSl)} | R/R=2:1
-    SL distance: ${plain(slDist)} (${(slDist / a.price * 100).toFixed(3)}% of price) — wide enough to survive wicks
+      slTpGuide = `  PRE-COMPUTED TP/SL for 30-min scalp (1.5:1 R/R, min SL=${(minSlPct * 100).toFixed(2)}% of price):
+    IF LONG : TP=${plain(cappedLongTp)} | SL=${plain(longSl)} | R/R=1.5:1
+    IF SHORT: TP=${plain(cappedShortTp)} | SL=${plain(shortSl)} | R/R=1.5:1
+    SL distance: ${plain(slDist)} (${(slDist / a.price * 100).toFixed(3)}% of price) | TP distance: ${plain(tpDist)} (${(tpDist / a.price * 100).toFixed(3)}%)
     ATR=${plain(atr)} | Nearest resistance: ${plain(ind.nearestResistance)} | Nearest support: ${plain(ind.nearestSupport)}
     Trend: ${trendNote}`
 
@@ -202,8 +202,8 @@ DIRECTION — use all context in order:
   6. News/whales: strong catalyst overrides weak TA. No catalyst → pure TA read.
 
 TP/SL — use the pre-computed ATR-based levels:
-  • They are already calculated for you above (5×ATR TP, 2.5×ATR SL from entry).
-  • Stops are deliberately wide to survive normal wicks and stop-hunts before price reaches TP.
+  • R/R is 1.5:1 — TP is 1.5× the SL distance. Closer TP = much higher probability of being hit in 30 min.
+  • SL is wide enough to survive normal wicks (min 0.5% for crypto, 0.25% for gold).
   • Use them as-is. Only adjust if a swing level sits directly in the path.
   • TP must be on the profit side, SL on the loss side. Never swap them.
 
@@ -232,11 +232,11 @@ Include ALL assets — use confidence=0.0 for skipped ones (they will be filtere
       "direction": "long",
       "leverage": 50,
       "portfolio_pct": 5,
-      "tp": 2368.00,
+      "tp": 2356.00,
       "sl": 2315.00,
       "market_price": 2338.00,
       "confidence": 0.75,
-      "reasoning": "EMA50 bullish trend, RSI 42 rising from near-oversold with strong support at 2318. News confirms positive sentiment — long with 2.3:1 R/R anchored to swing levels."
+      "reasoning": "EMA50 bullish trend, RSI 42 rising from near-oversold with strong support at 2318. News confirms positive sentiment — long targeting 1.5:1 R/R."
     }
   ]
 }`
@@ -292,17 +292,23 @@ export async function generateSignals(assets: MarketData[], performance?: Perfor
           return null
         }
 
-        // Enforce minimum stop distance — 5-min ATR stops are too tight for crypto wicks
+        // Enforce minimum stop distance and 1.5:1 R/R
         const isGold = sig.symbol === 'XAU/USD'
         const minSlPct = isGold ? 0.0025 : 0.005
         const slDist = Math.abs(price - sl)
         const tpDist = Math.abs(tp - price)
+        const rr = tpDist / slDist
+
         if (slDist / price < minSlPct) {
+          // Stop too tight — expand to minimum and reset TP to 1.5:1
           const newSlDist = price * minSlPct
-          const rr = tpDist / slDist
           sl = sig.direction === 'long' ? price - newSlDist : price + newSlDist
-          tp = sig.direction === 'long' ? price + newSlDist * rr : price - newSlDist * rr
-          console.warn(`[signals] Expanded ${sig.symbol} SL: ${slDist.toFixed(4)} → ${newSlDist.toFixed(4)} (was ${(slDist/price*100).toFixed(3)}%)`)
+          tp = sig.direction === 'long' ? price + newSlDist * 1.5 : price - newSlDist * 1.5
+          console.warn(`[signals] Expanded ${sig.symbol} SL to min ${(minSlPct*100).toFixed(2)}%, reset TP to 1.5:1`)
+        } else if (rr > 2.5) {
+          // TP is unrealistically far — pull it in to 1.5:1
+          tp = sig.direction === 'long' ? price + slDist * 1.5 : price - slDist * 1.5
+          console.warn(`[signals] Pulled in ${sig.symbol} TP from ${rr.toFixed(2)}:1 to 1.5:1`)
         }
 
         return { ...sig, tp, sl }
