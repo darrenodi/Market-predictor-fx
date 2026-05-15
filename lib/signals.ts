@@ -126,13 +126,13 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
     Support    : ${ind.supports.map(plain).join(' | ') || 'none found'} ${ind.nearestSupport ? `(nearest: ${plain(ind.nearestSupport)}, ${(((a.price - ind.nearestSupport) / a.price) * 100).toFixed(3)}% away)` : ''}
     ATR(5-min) : ${plain(ind.atr)} (${ind.atrPct.toFixed(4)}% per 5 min)`
 
-      // ATR-based TP/SL for 30-min scalps (not swing-level — that's for swing trades)
-      // SL = 1.5× ATR, TP = 3× ATR → automatic 2:1 R/R
+      // SL = 2.5× ATR, TP = 5× ATR → 2:1 R/R with room to survive normal wicks
+      // Wider stops prevent being hunted before price reaches the correct target
       const atr = ind.atr
-      const longTp  = a.price + atr * 3
-      const longSl  = a.price - atr * 1.5
-      const shortTp = a.price - atr * 3
-      const shortSl = a.price + atr * 1.5
+      const longTp  = a.price + atr * 5
+      const longSl  = a.price - atr * 2.5
+      const shortTp = a.price - atr * 5
+      const shortSl = a.price + atr * 2.5
 
       // Cap TP at nearest swing level so we don't reach past resistance
       const cappedLongTp  = ind.nearestResistance > a.price && ind.nearestResistance < longTp ? ind.nearestResistance - atr * 0.3 : longTp
@@ -144,7 +144,7 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
       slTpGuide = `  PRE-COMPUTED TP/SL for 30-min scalp (ATR-based, 2:1 R/R built in):
     IF LONG : TP=${plain(cappedLongTp)} | SL=${plain(longSl)} | R/R=2:1
     IF SHORT: TP=${plain(cappedShortTp)} | SL=${plain(shortSl)} | R/R=2:1
-    ATR=${plain(atr)} (each TP is 3×ATR, each SL is 1.5×ATR from entry)
+    ATR=${plain(atr)} (TP is 5×ATR, SL is 2.5×ATR from entry — wider stops to survive wicks)
     Nearby swing levels for context — nearest resistance: ${plain(ind.nearestResistance)} | nearest support: ${plain(ind.nearestSupport)}
     Trend: ${trendNote}`
 
@@ -197,7 +197,8 @@ DIRECTION — use all context in order:
   6. News/whales: strong catalyst overrides weak TA. No catalyst → pure TA read.
 
 TP/SL — use the pre-computed ATR-based levels:
-  • They are already calculated for you above (3×ATR TP, 1.5×ATR SL from entry).
+  • They are already calculated for you above (5×ATR TP, 2.5×ATR SL from entry).
+  • Stops are deliberately wide to survive normal wicks and stop-hunts before price reaches TP.
   • Use them as-is. Only adjust if a swing level sits directly in the path.
   • TP must be on the profit side, SL on the loss side. Never swap them.
 
