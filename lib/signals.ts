@@ -126,13 +126,18 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
     Support    : ${ind.supports.map(plain).join(' | ') || 'none found'} ${ind.nearestSupport ? `(nearest: ${plain(ind.nearestSupport)}, ${(((a.price - ind.nearestSupport) / a.price) * 100).toFixed(3)}% away)` : ''}
     ATR(5-min) : ${plain(ind.atr)} (${ind.atrPct.toFixed(4)}% per 5 min)`
 
-      // SL = 2.5× ATR, TP = 5× ATR → 2:1 R/R with room to survive normal wicks
-      // Wider stops prevent being hunted before price reaches the correct target
+      // SL floor: whichever is wider — 2.5× ATR or a % of price (survives normal crypto wicks)
+      // Gold is less volatile in % terms so uses a smaller floor
       const atr = ind.atr
-      const longTp  = a.price + atr * 5
-      const longSl  = a.price - atr * 2.5
-      const shortTp = a.price - atr * 5
-      const shortSl = a.price + atr * 2.5
+      const isGold = a.symbol === 'XAU/USD'
+      const minSlPct = isGold ? 0.0025 : 0.005   // 0.25% gold | 0.5% crypto
+      const slDist = Math.max(atr * 2.5, a.price * minSlPct)
+      const tpDist = slDist * 2                    // 2:1 R/R always maintained
+
+      const longTp  = a.price + tpDist
+      const longSl  = a.price - slDist
+      const shortTp = a.price - tpDist
+      const shortSl = a.price + slDist
 
       // Cap TP at nearest swing level so we don't reach past resistance
       const cappedLongTp  = ind.nearestResistance > a.price && ind.nearestResistance < longTp ? ind.nearestResistance - atr * 0.3 : longTp
@@ -141,11 +146,11 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
       const trendDir = a.price >= ind.ema50 ? 'LONG' : 'SHORT'
       const trendNote = `preferred direction: ${trendDir} (price ${a.price >= ind.ema50 ? 'above' : 'below'} EMA50 — counter-trend needs strong confluence)`
 
-      slTpGuide = `  PRE-COMPUTED TP/SL for 30-min scalp (ATR-based, 2:1 R/R built in):
+      slTpGuide = `  PRE-COMPUTED TP/SL for 30-min scalp (2:1 R/R, min SL=${(minSlPct * 100).toFixed(2)}% of price):
     IF LONG : TP=${plain(cappedLongTp)} | SL=${plain(longSl)} | R/R=2:1
     IF SHORT: TP=${plain(cappedShortTp)} | SL=${plain(shortSl)} | R/R=2:1
-    ATR=${plain(atr)} (TP is 5×ATR, SL is 2.5×ATR from entry — wider stops to survive wicks)
-    Nearby swing levels for context — nearest resistance: ${plain(ind.nearestResistance)} | nearest support: ${plain(ind.nearestSupport)}
+    SL distance: ${plain(slDist)} (${(slDist / a.price * 100).toFixed(3)}% of price) — wide enough to survive wicks
+    ATR=${plain(atr)} | Nearest resistance: ${plain(ind.nearestResistance)} | Nearest support: ${plain(ind.nearestSupport)}
     Trend: ${trendNote}`
 
       if (bias.blockLong)   slTpGuide += `\n  ⛔ RSI BLOCK: ${bias.blockLong}`
@@ -285,6 +290,19 @@ export async function generateSignals(assets: MarketData[], performance?: Perfor
         if (!tpSide || !slSide) {
           console.warn(`[signals] Dropped ${sig.symbol}: TP/SL on wrong side (price=${price}, tp=${tp}, sl=${sl})`)
           return null
+        }
+
+        // Enforce minimum stop distance — 5-min ATR stops are too tight for crypto wicks
+        const isGold = sig.symbol === 'XAU/USD'
+        const minSlPct = isGold ? 0.0025 : 0.005
+        const slDist = Math.abs(price - sl)
+        const tpDist = Math.abs(tp - price)
+        if (slDist / price < minSlPct) {
+          const newSlDist = price * minSlPct
+          const rr = tpDist / slDist
+          sl = sig.direction === 'long' ? price - newSlDist : price + newSlDist
+          tp = sig.direction === 'long' ? price + newSlDist * rr : price - newSlDist * rr
+          console.warn(`[signals] Expanded ${sig.symbol} SL: ${slDist.toFixed(4)} → ${newSlDist.toFixed(4)} (was ${(slDist/price*100).toFixed(3)}%)`)
         }
 
         return { ...sig, tp, sl }
