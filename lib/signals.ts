@@ -126,13 +126,12 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
     Support    : ${ind.supports.map(plain).join(' | ') || 'none found'} ${ind.nearestSupport ? `(nearest: ${plain(ind.nearestSupport)}, ${(((a.price - ind.nearestSupport) / a.price) * 100).toFixed(3)}% away)` : ''}
     ATR(5-min) : ${plain(ind.atr)} (${ind.atrPct.toFixed(4)}% per 5 min)`
 
-      // SL floor: whichever is wider — 2.5× ATR or a % of price (survives normal crypto wicks)
-      // Gold is less volatile in % terms so uses a smaller floor
+      // Target $100–200 price move for BTC-scale assets; ATR-based keeps it proportional per asset
       const atr = ind.atr
       const isGold = a.symbol === 'XAU/USD'
-      const minSlPct = isGold ? 0.0025 : 0.005   // 0.25% gold | 0.5% crypto
-      const slDist = Math.max(atr * 2.5, a.price * minSlPct)
-      const tpDist = slDist * 1.5                  // 1.5:1 R/R — TP closer, higher hit rate
+      const minSlPct = isGold ? 0.0005 : 0.001   // 0.05% gold | 0.1% crypto (safety floor only)
+      const slDist = Math.max(atr * 1.5, a.price * minSlPct)
+      const tpDist = slDist * 1.5                  // 1.5:1 R/R
 
       const longTp  = a.price + tpDist
       const longSl  = a.price - slDist
@@ -202,9 +201,9 @@ DIRECTION — use all context in order:
   6. News/whales: strong catalyst overrides weak TA. No catalyst → pure TA read.
 
 TP/SL — use the pre-computed ATR-based levels:
-  • R/R is 1.5:1 — TP is 1.5× the SL distance. Closer TP = much higher probability of being hit in 30 min.
-  • SL is wide enough to survive normal wicks (min 0.5% for crypto, 0.25% for gold).
-  • Use them as-is. Only adjust if a swing level sits directly in the path.
+  • R/R is 1.5:1 — TP is 1.5× the SL distance. Target $100–200 price move for BTC-scale assets.
+  • Keep TP tight and realistic for 30 min — do NOT set targets hundreds of dollars beyond entry.
+  • Use the pre-computed levels as-is. Only adjust if a swing level sits directly in the path.
   • TP must be on the profit side, SL on the loss side. Never swap them.
 
 PREVIOUS SIGNAL — if the previous trade is winning and structure hasn't changed, keep direction.
@@ -294,7 +293,7 @@ export async function generateSignals(assets: MarketData[], performance?: Perfor
 
         // Enforce minimum stop distance and 1.5:1 R/R
         const isGold = sig.symbol === 'XAU/USD'
-        const minSlPct = isGold ? 0.0025 : 0.005
+        const minSlPct = isGold ? 0.0005 : 0.001
         const slDist = Math.abs(price - sl)
         const tpDist = Math.abs(tp - price)
         const rr = tpDist / slDist
