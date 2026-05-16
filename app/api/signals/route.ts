@@ -3,20 +3,15 @@ import { supabase } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
-const STATS_WINDOW_HOURS = 24
-
 export interface SymbolStats {
   tp: number
   sl: number
   expired: number
   total: number
-  windowHours: number
 }
 
 export async function GET() {
   try {
-    const since = new Date(Date.now() - STATS_WINDOW_HOURS * 60 * 60 * 1000).toISOString()
-
     const [{ data: signals, error }, { data: config }, { data: closed }] = await Promise.all([
       supabase
         .from('signals')
@@ -28,8 +23,7 @@ export async function GET() {
       supabase
         .from('signals')
         .select('symbol, status')
-        .in('status', ['tp_hit', 'sl_hit', 'expired'])
-        .gte('created_at', since),
+        .in('status', ['tp_hit', 'sl_hit', 'expired']),
     ])
 
     if (error) throw error
@@ -40,10 +34,10 @@ export async function GET() {
       if (!latestBySymbol.has(s.symbol)) latestBySymbol.set(s.symbol, s)
     }
 
-    // Build per-symbol stats from last 24h of closed signals
+    // Build per-symbol all-time stats
     const stats: Record<string, SymbolStats> = {}
     for (const row of closed ?? []) {
-      if (!stats[row.symbol]) stats[row.symbol] = { tp: 0, sl: 0, expired: 0, total: 0, windowHours: STATS_WINDOW_HOURS }
+      if (!stats[row.symbol]) stats[row.symbol] = { tp: 0, sl: 0, expired: 0, total: 0 }
       if (row.status === 'tp_hit') stats[row.symbol].tp++
       else if (row.status === 'sl_hit') stats[row.symbol].sl++
       else if (row.status === 'expired') stats[row.symbol].expired++

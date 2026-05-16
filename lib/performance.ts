@@ -25,13 +25,10 @@ function winPct(tp: number, sl: number): number {
 
 export async function fetchPerformanceSummary(): Promise<PerformanceSummary | null> {
   try {
-    const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
-
     const { data } = await supabaseAdmin
       .from('signals')
       .select('symbol, direction, status, created_at')
       .in('status', ['tp_hit', 'sl_hit'])
-      .gte('created_at', since)
       .order('created_at', { ascending: false })
 
     if (!data?.length) return null
@@ -87,7 +84,7 @@ export function formatPerformanceForPrompt(p: PerformanceSummary): string {
 
   const { long, short } = p.byDirection
 
-  return `━━━ YOUR SIGNAL TRACK RECORD (last 48h) ━━━
+  return `━━━ YOUR SIGNAL TRACK RECORD (all-time, ${p.total} trades) ━━━
 Overall: ${p.tp} TP / ${p.sl} SL — ${p.winRate}% win rate
 
 By asset:

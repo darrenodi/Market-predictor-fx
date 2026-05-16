@@ -224,7 +224,7 @@ export default function AssetCard({ symbol, signal, currentPrice, change24h, pri
       {/* 24h outcome stats */}
       <div className="bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2.5">
         <p className="text-[10px] text-gray-500 mb-1.5 uppercase tracking-wide">
-          Last {stats?.windowHours ?? 24}h outcomes
+          All-time outcomes {stats ? `(${stats.total} trades)` : ''}
         </p>
         {stats && stats.total > 0 ? (
           <div className="flex items-center justify-between gap-1 text-xs">
