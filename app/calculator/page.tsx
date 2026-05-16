@@ -31,6 +31,13 @@ function fmtPct(n: number): string {
 
 const XAF_RATE = 580
 
+type AssetKey = 'BTC' | 'XAU' | 'ETH'
+const ASSETS: Record<AssetKey, { label: string; price: number; move: number; fee: number }> = {
+  BTC: { label: 'BTC',  price: 80000, move: 100, fee: 0.01 },
+  XAU: { label: 'Gold', price: 4500,  move: 3,   fee: 0    },
+  ETH: { label: 'ETH',  price: 2300,  move: 10,  fee: 0.04 },
+}
+
 function fmtXAF(usd: number): string {
   if (!isFinite(usd) || isNaN(usd)) return '—'
   const n = usd * XAF_RATE
@@ -42,14 +49,22 @@ function fmtXAF(usd: number): string {
 }
 
 export default function CalculatorPage() {
-  const [entryPrice, setEntryPrice] = useState(81224)
+  const [asset, setAsset] = useState<AssetKey>('BTC')
+  const [entryPrice, setEntryPrice] = useState(ASSETS.BTC.price)
   const [balance, setBalance] = useState(50)
   const [leverage, setLeverage] = useState(50)
   const [direction, setDirection] = useState<'long' | 'short'>('long')
-  const [moveAmount, setMoveAmount] = useState(50)
+  const [moveAmount, setMoveAmount] = useState(ASSETS.BTC.move)
+
+  function selectAsset(key: AssetKey) {
+    setAsset(key)
+    setEntryPrice(ASSETS[key].price)
+    setMoveAmount(ASSETS[key].move)
+    setMarketFee(ASSETS[key].fee)
+  }
   const [tradesPerDay, setTradesPerDay] = useState(10)
   const [tradingDays, setTradingDays] = useState(30)
-  const [marketFee, setMarketFee] = useState(0.02)
+  const [marketFee, setMarketFee] = useState(ASSETS.BTC.fee)
   const [profitRemoval, setProfitRemoval] = useState(0)
 
   const isLong = direction === 'long'
@@ -138,6 +153,26 @@ export default function CalculatorPage() {
 
             {/* ── INPUTS ── */}
             <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-5 space-y-6">
+
+              {/* Asset selector */}
+              <div>
+                <label className="text-xs text-gray-400 block mb-1.5">Asset</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(Object.keys(ASSETS) as AssetKey[]).map(key => (
+                    <button
+                      key={key}
+                      onClick={() => selectAsset(key)}
+                      className={`py-2 rounded-lg text-sm font-semibold transition-all ${
+                        asset === key
+                          ? 'bg-[#16a34a] text-white ring-1 ring-[#22c55e]/40'
+                          : 'bg-[#0a1220] border border-[#1e3a5f] text-gray-400 hover:text-white hover:border-gray-500'
+                      }`}
+                    >
+                      {ASSETS[key].label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               {/* Asset price */}
               <div>

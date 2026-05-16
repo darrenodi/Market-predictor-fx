@@ -127,29 +127,29 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
     Support    : ${ind.supports.map(plain).join(' | ') || 'none found'} ${ind.nearestSupport ? `(nearest: ${plain(ind.nearestSupport)}, ${(((a.price - ind.nearestSupport) / a.price) * 100).toFixed(3)}% away)` : ''}
     ATR(5-min) : ${plain(ind.atr)} (${ind.atrPct.toFixed(4)}% per 5 min)`
 
-      // Target $100–200 price move for BTC-scale assets; ATR-based keeps it proportional per asset
+      // TP target: 0.15% of price (BTC ~$135, ETH ~$4.50, XAU ~$5, DOGE ATR-driven)
+      // SL: 2× TP — wide enough to survive routine wicks; accepts 0.5:1 R/R for higher win rate
       const atr = ind.atr
-      const isGold = a.symbol === 'XAU/USD'
-      const minSlPct = isGold ? 0.0005 : 0.001   // 0.05% gold | 0.1% crypto (safety floor only)
-      const slDist = Math.max(atr * 1.5, a.price * minSlPct)
-      const tpDist = slDist * 1.5                  // 1.5:1 R/R
+      const tpDist = Math.max(a.price * 0.0015, atr * 1.5)   // 0.15% of price; ATR as minimum floor
+      const slDist = tpDist * 2                                 // SL 2× TP for wick survival
 
       const longTp  = a.price + tpDist
       const longSl  = a.price - slDist
       const shortTp = a.price - tpDist
       const shortSl = a.price + slDist
 
-      // Cap TP at nearest swing level so we don't reach past resistance
+      // Cap TP at nearest swing level so we don't reach past key S/R
       const cappedLongTp  = ind.nearestResistance > a.price && ind.nearestResistance < longTp ? ind.nearestResistance - atr * 0.3 : longTp
       const cappedShortTp = ind.nearestSupport > 0 && ind.nearestSupport > shortTp ? ind.nearestSupport + atr * 0.3 : shortTp
 
       const trendDir = a.price >= ind.ema50 ? 'LONG' : 'SHORT'
       const trendNote = `preferred direction: ${trendDir} (price ${a.price >= ind.ema50 ? 'above' : 'below'} EMA50 — counter-trend needs strong confluence)`
 
-      slTpGuide = `  PRE-COMPUTED TP/SL for 30-min scalp (1.5:1 R/R, min SL=${(minSlPct * 100).toFixed(2)}% of price):
-    IF LONG : TP=${plain(cappedLongTp)} | SL=${plain(longSl)} | R/R=1.5:1
-    IF SHORT: TP=${plain(cappedShortTp)} | SL=${plain(shortSl)} | R/R=1.5:1
-    SL distance: ${plain(slDist)} (${(slDist / a.price * 100).toFixed(3)}% of price) | TP distance: ${plain(tpDist)} (${(tpDist / a.price * 100).toFixed(3)}%)
+      const priceDecimals = a.price < 1 ? 6 : 2
+      slTpGuide = `  PRE-COMPUTED TP/SL (TP=0.15% of price | SL=2×TP | ~0.5:1 R/R — needs >67% win rate):
+    IF LONG : TP=${plain(cappedLongTp)} | SL=${plain(longSl)}
+    IF SHORT: TP=${plain(cappedShortTp)} | SL=${plain(shortSl)}
+    TP move: $${tpDist.toFixed(priceDecimals)} (${(tpDist / a.price * 100).toFixed(3)}%) | SL move: $${slDist.toFixed(priceDecimals)} (${(slDist / a.price * 100).toFixed(3)}%)
     ATR=${plain(atr)} | Nearest resistance: ${plain(ind.nearestResistance)} | Nearest support: ${plain(ind.nearestSupport)}
     Trend: ${trendNote}`
 
@@ -180,51 +180,68 @@ ${whaleLine}`
 
   const perfBlock = performance ? '\n' + formatPerformanceForPrompt(performance) + '\n' : ''
 
-  return `You are an elite futures signal engine operating like a top-tier prop trader. Every asset gets a signal every 30 minutes — the next candle is where the trade plays out.
+  // Dynamic per-asset TP/SL targets in dollar terms
+  const assetTpLines = assets.map(a => {
+    const tpTarget = Math.max(a.price * 0.0015, 0)
+    const dec = a.price < 1 ? 6 : a.price < 100 ? 3 : 2
+    return `  ${a.symbol.padEnd(10)}: TP ~$${tpTarget.toFixed(dec)} | SL ~$${(tpTarget * 2).toFixed(dec)}  (0.15% / 0.30% of $${plain(a.price)})`
+  }).join('\n')
 
-Time: ${now}
-Session: ${session.name} [${session.quality}] — ${session.note}
+  return `You are a professional prop trader running a live 24/7 futures scalping desk. Every 30 minutes you analyse each asset and generate a signal. You think like a seasoned market maker — you understand stop-hunts, session liquidity patterns, and when NOT to trade is just as important as when to trade.
+
+━━━ CURRENT TIMESTAMP ━━━
+${now}
+
+━━━ TRADING SESSION ━━━
+${session.name} [${session.quality}] — ${session.note}
 ${perfBlock}
+━━━ PRICE MOVE TARGETS (30-min scalp) ━━━
+${assetTpLines}
 
+Design: TP = 0.15% of price | SL = 2× TP (0.30% of price)
+Rationale: wider SL survives routine wick noise; you compensate with high selectivity.
+At 0.5:1 R/R you need >67% win rate — so only take high-conviction setups.
+
+━━━ MARKET DATA ━━━
 ${assetBlocks}
 
-━━━ YOUR JOB ━━━
+━━━ SIGNAL GENERATION ━━━
 
-For EVERY asset, pick the highest-probability direction for the next 30 minutes and output a signal.
-Only set confidence=0.0 if price action is genuinely ranging with zero directional edge (rare).
+DIRECTION — work through in order, most weight first:
+  1. Weekly bias + 24h structure: strongest signal. If both agree → that is your direction.
+  2. EMA stack (8/21/50): bullish stack (8>21>50) → long; bearish (8<21<50) → short.
+  3. RSI(14): ≥70 overbought → short pressure; ≤30 oversold → long pressure.
+  4. Momentum: 30m + 1h aligned → confirms. Opposing → reduce confidence.
+  5. Session: HIGH/PEAK → trust momentum breakouts. LOW → fade extremes, tighten size.
+  6. News/whales: strong catalyst overrides weak TA. No catalyst → pure technicals.
 
-DIRECTION — use all context in order:
-  1. Weekly bias + 24h structure: if both agree, that's your direction.
-  2. EMA stack (8/21/50): bullish stack → long bias, bearish stack → short bias.
-  3. RSI: extreme overbought (≥70) favours short, extreme oversold (≤30) favours long.
-  4. Momentum: 30m and 1h momentum pointing the same way confirms direction.
-  5. Session: HIGH/PEAK sessions — trust momentum breakouts. LOW sessions — fade extremes.
-  6. News/whales: strong catalyst overrides weak TA. No catalyst → pure TA read.
-
-TP/SL — use the pre-computed ATR-based levels:
-  • R/R is 1.5:1 — TP is 1.5× the SL distance. Target $100–200 price move for BTC-scale assets.
-  • Keep TP tight and realistic for 30 min — do NOT set targets hundreds of dollars beyond entry.
-  • Use the pre-computed levels as-is. Only adjust if a swing level sits directly in the path.
+TP/SL:
+  • Start from the pre-computed levels — they are calibrated for your asset and current ATR.
+  • Adjust TP inward if a key resistance/support sits directly in the path.
+  • Never tighten SL below the pre-computed level — only widen if structure demands it.
   • TP must be on the profit side, SL on the loss side. Never swap them.
 
-PREVIOUS SIGNAL — if the previous trade is winning and structure hasn't changed, keep direction.
+PREVIOUS SIGNAL:
+  If winning and structure has not reversed, maintain direction. Change only on clear bias flip.
 
 LEVERAGE & SIZING:
-  • Strong setup (weekly + structure + EMA all agree): 100–200x crypto / 30–50x gold
-  • Good setup (2–3 factors agree): 50–100x crypto / 15–30x gold
-  • Weak setup (mixed signals, session noise): 20–50x crypto / 10–15x gold
+  • Strong setup (4/4 signals agree, HIGH/PEAK session): 100–200× crypto / 30–50× gold
+  • Good setup (2–3 factors agree): 50–100× crypto / 15–30× gold
+  • Weak setup (mixed or LOW session): 20–50× crypto / 10–15× gold
   • portfolio_pct: 3–7
 
 CONFIDENCE:
-  • 0.8–1.0: all HTF + session + TA aligned
-  • 0.6–0.79: majority of signals agree
-  • 0.5–0.59: mixed but best available direction
-  • 0.0: only if genuinely no edge (flat range, zero momentum, zero news)
+  • 0.8–1.0 — all HTF + session + TA fully aligned
+  • 0.6–0.79 — majority of signals agree
+  • 0.5–0.59 — mixed but best available read
+  • 0.0 — skip: no directional edge (flat range, zero momentum, zero catalyst)
 
-reasoning: 1 sentence — what the dominant signal is and why this direction wins right now.
+reasoning: 1 crisp sentence — dominant signal and why this direction wins right now.
 
-Respond ONLY with valid JSON. No markdown. No explanation outside JSON.
-Include ALL assets — use confidence=0.0 for skipped ones (they will be filtered out automatically).
+━━━ OUTPUT ━━━
+Respond ONLY with valid JSON. No markdown. No text outside the JSON block.
+Include ALL ${assets.length} assets. Set confidence=0.0 to skip an asset (it will not be inserted).
+
 {
   "signals": [
     {
@@ -233,10 +250,10 @@ Include ALL assets — use confidence=0.0 for skipped ones (they will be filtere
       "leverage": 50,
       "portfolio_pct": 5,
       "tp": 2356.00,
-      "sl": 2315.00,
+      "sl": 2290.00,
       "market_price": 2338.00,
       "confidence": 0.75,
-      "reasoning": "EMA50 bullish trend, RSI 42 rising from near-oversold with strong support at 2318. News confirms positive sentiment — long targeting 1.5:1 R/R."
+      "reasoning": "EMA stack bullish, RSI 42 rising from near-oversold with strong support at 2310 — momentum and structure aligned long."
     }
   ]
 }`
@@ -292,23 +309,23 @@ export async function generateSignals(assets: MarketData[], performance?: Perfor
           return null
         }
 
-        // Enforce minimum stop distance and 1.5:1 R/R
+        // Enforce minimum SL distance; design target is 0.5:1 R/R (SL = 2× TP)
         const isGold = sig.symbol === 'XAU/USD'
-        const minSlPct = isGold ? 0.0005 : 0.001
+        const minSlPct = isGold ? 0.001 : 0.002   // 0.1% gold | 0.2% crypto (≈ TP target level)
         const slDist = Math.abs(price - sl)
         const tpDist = Math.abs(tp - price)
         const rr = tpDist / slDist
 
         if (slDist / price < minSlPct) {
-          // Stop too tight — expand to minimum and reset TP to 1.5:1
+          // SL dangerously tight — expand to minimum and set TP at 0.5:1
           const newSlDist = price * minSlPct
           sl = sig.direction === 'long' ? price - newSlDist : price + newSlDist
-          tp = sig.direction === 'long' ? price + newSlDist * 1.5 : price - newSlDist * 1.5
-          console.warn(`[signals] Expanded ${sig.symbol} SL to min ${(minSlPct*100).toFixed(2)}%, reset TP to 1.5:1`)
-        } else if (rr > 2.5) {
-          // TP is unrealistically far — pull it in to 1.5:1
-          tp = sig.direction === 'long' ? price + slDist * 1.5 : price - slDist * 1.5
-          console.warn(`[signals] Pulled in ${sig.symbol} TP from ${rr.toFixed(2)}:1 to 1.5:1`)
+          tp = sig.direction === 'long' ? price + newSlDist * 0.5 : price - newSlDist * 0.5
+          console.warn(`[signals] Expanded ${sig.symbol} SL to min ${(minSlPct*100).toFixed(2)}%, set TP to 0.5:1`)
+        } else if (rr > 2.0) {
+          // TP unrealistically far (Gemini reverted to old high-R/R style) — clamp to 0.5:1
+          tp = sig.direction === 'long' ? price + slDist * 0.5 : price - slDist * 0.5
+          console.warn(`[signals] Clamped ${sig.symbol} TP from ${rr.toFixed(2)}:1 to 0.5:1`)
         }
 
         return { ...sig, tp, sl }
