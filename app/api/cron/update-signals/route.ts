@@ -15,9 +15,22 @@ function isAuthorized(req: NextRequest): boolean {
   return auth === `Bearer ${process.env.CRON_SECRET}`
 }
 
+// 08:00–09:00 UTC — London open stop-hunt hour.
+// Institutions spike price to hunt retail stops before the real move.
+// Skip signal generation entirely; let price commit to a direction first.
+function isLondonOpenHour(): boolean {
+  const h = new Date().getUTCHours()
+  return h === 8
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  if (isLondonOpenHour()) {
+    console.log('[update-signals] Skipped — London open stop-hunt hour (08:00–09:00 UTC)')
+    return NextResponse.json({ ok: true, skipped: 'london_open', signals_generated: 0 })
   }
 
   try {

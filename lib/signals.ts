@@ -80,7 +80,8 @@ function getSession(): { name: string; quality: string; note: string } {
   const h = new Date().getUTCHours()
   if (h >= 13 && h < 16) return { name: 'London/NY Overlap', quality: 'PEAK', note: 'Highest liquidity — breakouts and momentum moves are reliable' }
   if (h >= 16 && h < 21) return { name: 'New York', quality: 'HIGH', note: 'Institutional flow — trend continuations valid, watch for reversals at NY close' }
-  if (h >= 8 && h < 13) return { name: 'London', quality: 'HIGH', note: 'European open — strong momentum moves, good for breakouts' }
+  if (h >= 9 && h < 13) return { name: 'London', quality: 'HIGH', note: 'London in full flow — strong momentum moves, trend-follow the established direction' }
+  if (h === 8) return { name: 'London Open', quality: 'DANGER', note: 'Stop-hunt hour — institutions spike price to grab liquidity before reversing. Avoid new entries, wait for direction to commit after 09:00 UTC' }
   if (h >= 21 || h < 2) return { name: 'Post-NY / Pre-Asia', quality: 'LOW', note: 'Thin volume — choppy price action, avoid breakouts, range-play only' }
   return { name: 'Asia', quality: 'LOW', note: 'Reduced volume — tight ranges, fake breakouts common, prefer counter-trend fades' }
 }
