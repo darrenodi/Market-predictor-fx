@@ -55,7 +55,7 @@ function Cell({ sig }: CellProps) {
       <div className="flex flex-col items-center gap-1">
         {/* Direction */}
         <span className={`text-xs font-bold px-2 py-0.5 rounded w-full text-center ${
-          sig.direction === 'long' ? 'bg-[#0a2e1a] text-[#22c55e]' : 'bg-[#2e0a0a] text-red-400'
+          sig.direction === 'long' ? 'bg-[#0d1a3a] text-blue-400' : 'bg-[#2a1800] text-amber-400'
         }`}>
           {sig.direction.toUpperCase()}
         </span>
