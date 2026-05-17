@@ -98,7 +98,7 @@ function SessionCard({ session, todayRows }: SessionCardProps) {
 
       {rows.length === 0 ? (
         <p className="text-xs text-gray-600 py-2 text-center">
-          {status === 'upcoming' ? `Opens at ${meta.openUTC}:00 UTC` : 'No predictions recorded'}
+          No signal available
         </p>
       ) : (
         <div className="space-y-2">

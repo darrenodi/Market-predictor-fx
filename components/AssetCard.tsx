@@ -109,7 +109,7 @@ export default function AssetCard({ symbol, signal, currentPrice, change24h, pri
           <span className="text-[#22c55e]">({relativeTime(signal.updated_at ?? signal.created_at)})</span>
         </div>
       ) : (
-        <p className="text-xs text-gray-500">Waiting for signal…</p>
+        <p className="text-xs text-gray-500 animate-pulse">ModuVise is thinking…</p>
       )}
 
       {/* Rationale */}
