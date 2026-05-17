@@ -4,17 +4,18 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { BarChart2, Calculator, Briefcase, Bell, Newspaper, Settings, Plus, LogOut } from 'lucide-react'
+import { BarChart2, Calculator, Briefcase, Bell, Newspaper, Settings, Plus, LogOut, TrendingUp } from 'lucide-react'
 
 const STARTING_BALANCE = 10_000
 
 const NAV_ITEMS = [
-  { icon: BarChart2,  label: 'Dashboard',  href: '/' },
-  { icon: Calculator, label: 'Calculator', href: '/calculator' },
-  { icon: Briefcase,  label: 'Portfolio',  href: '#' },
-  { icon: Bell,       label: 'Alerts',     href: '#' },
-  { icon: Newspaper,  label: 'News',       href: '#' },
-  { icon: Settings,   label: 'Settings',   href: '#' },
+  { icon: BarChart2,  label: 'Dashboard',        href: '/' },
+  { icon: Calculator, label: 'Calculator',        href: '/calculator' },
+  { icon: TrendingUp, label: 'Daily Predictions', href: '/dailyprediction' },
+  { icon: Briefcase,  label: 'Portfolio',         href: '#' },
+  { icon: Bell,       label: 'Alerts',            href: '#' },
+  { icon: Newspaper,  label: 'News',              href: '#' },
+  { icon: Settings,   label: 'Settings',          href: '#' },
 ]
 
 export default function Sidebar() {
