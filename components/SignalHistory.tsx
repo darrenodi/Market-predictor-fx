@@ -43,7 +43,7 @@ function isValid(sig: Signal): boolean {
 interface CellProps { sig: Signal | undefined }
 
 function Cell({ sig }: CellProps) {
-  if (!sig) return <td className="px-3 py-3 text-center text-gray-600 text-xs">—</td>
+  if (!sig) return <td className="px-3 py-3 text-center text-gray-600 text-[10px]">No signal available</td>
 
   const closedAt = sig.tp_hit_at ?? sig.sl_hit_at ?? sig.updated_at
   const duration = timeDiff(sig.created_at, closedAt)
@@ -116,8 +116,8 @@ export default function SignalHistory() {
     return (
       <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-5">
         <h2 className="text-white font-semibold mb-4">Signal History</h2>
-        <p className="text-gray-500 text-sm text-center py-6">
-          No closed signals yet — history appears here once trades complete.
+        <p className="text-gray-500 text-sm text-center py-6 animate-pulse">
+          ModuVise is thinking…
         </p>
       </div>
     )
