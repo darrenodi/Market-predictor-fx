@@ -98,8 +98,20 @@ Loss: -${pct.toFixed(2)}% (-${lev.toFixed(1)}% with ${s.leverage}x)
 🕐 ${nowGMT1()}`
 }
 
-export async function notifyNewSignal(signal: GeneratedSignal): Promise<void> {
+export async function notifyNewSignals(signals: GeneratedSignal[]): Promise<void> {
   const groupId = process.env.TELEGRAM_GROUP_ID
-  if (!groupId || signal.confidence < 0.45) return
-  await sendMessage(groupId, formatNewSignal(signal))
+  if (!groupId || signals.length === 0) return
+
+  const lines = signals.map(s => {
+    const emoji = s.direction === 'long' ? '📈' : '📉'
+    const pct = Math.round(s.confidence * 100)
+    return `${emoji} <b>${s.symbol}</b> — ${s.direction.toUpperCase()} ${confidenceStars(s.confidence)} ${pct}%` +
+      `\n💰 Entry: $${fmt(s.market_price)}  🎯 TP: $${fmt(s.tp)}  🛡 SL: $${fmt(s.sl)}` +
+      `\n⚡ ${s.leverage}x | 💼 ${s.portfolio_pct}%` +
+      `\n<i>${s.reasoning}</i>`
+  }).join('\n\n')
+
+  await sendMessage(groupId,
+    `🎯 <b>SIGNALS — ${nowGMT1()}</b>\n━━━━━━━━━━━━━━━━\n${lines}\n━━━━━━━━━━━━━━━━`
+  )
 }

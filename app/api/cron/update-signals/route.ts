@@ -5,7 +5,7 @@ import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, computeIndicator
 import { fetchAllNews, fetchWhaleAlerts } from '@/lib/news'
 import { generateSignals } from '@/lib/signals'
 import { fetchPerformanceSummary } from '@/lib/performance'
-import { notifyNewSignal } from '@/lib/telegram'
+import { notifyNewSignals } from '@/lib/telegram'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -84,8 +84,8 @@ async function runSignalUpdate(memeCoin: string) {
 
   for (const sig of signals) {
     await supabaseAdmin.from('signals').insert({ ...sig, status: 'active' })
-    await notifyNewSignal(sig)
   }
+  await notifyNewSignals(signals)
 
   console.log(`[update-signals] Generated ${signals.length} signals`)
 }
