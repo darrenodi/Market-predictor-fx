@@ -277,3 +277,46 @@ export async function fetchAllPrices(memeCoin = 'DOGE'): Promise<PriceMap> {
 export function geckoId(symbol: string): string | undefined {
   return GECKO_ID[symbol]
 }
+
+// Fetch the price of a symbol at a specific UTC timestamp (±5 min window).
+// Uses CoinGecko market_chart/range — accurate regardless of when called.
+export async function fetchPriceAtTime(symbol: string, utcTimestamp: number): Promise<number | null> {
+  const id = GECKO_ID[symbol]
+  if (!id) return null
+
+  // 5-minute window around the target time
+  const from = Math.floor(utcTimestamp / 1000) - 300
+  const to   = Math.floor(utcTimestamp / 1000) + 300
+
+  try {
+    const url = `https://api.coingecko.com/api/v3/coins/${id}/market_chart/range?vs_currency=usd&from=${from}&to=${to}`
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return null
+    const data = await res.json()
+    const prices = data.prices as [number, number][]
+    if (!prices?.length) return null
+    // Return the price closest to the target timestamp
+    const target = utcTimestamp
+    const closest = prices.reduce((best, cur) =>
+      Math.abs(cur[0] - target) < Math.abs(best[0] - target) ? cur : best
+    )
+    return closest[1]
+  } catch {
+    return null
+  }
+}
+
+// Fetch prices for all session symbols at a specific UTC timestamp.
+// Falls back to current price if historical data is unavailable.
+export async function fetchPricesAtTime(
+  symbols: string[],
+  utcTimestamp: number,
+): Promise<Record<string, number>> {
+  const results = await Promise.all(
+    symbols.map(async s => {
+      const price = await fetchPriceAtTime(s, utcTimestamp)
+      return [s, price] as [string, number | null]
+    })
+  )
+  return Object.fromEntries(results.filter(([, p]) => p !== null)) as Record<string, number>
+}

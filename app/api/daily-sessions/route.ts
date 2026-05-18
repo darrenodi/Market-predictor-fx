@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase'
-import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, computeIndicators } from '@/lib/prices'
+import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, fetchPricesAtTime, computeIndicators } from '@/lib/prices'
 import { generateDailyPredictions, SESSIONS, SessionKey } from '@/lib/daily-sessions'
 
 export const dynamic = 'force-dynamic'
@@ -54,7 +54,8 @@ function sessionsToClose(): SessionKey[] {
 
 async function autoClose(
   pendingRows: DailySessionRow[],
-  prices: Awaited<ReturnType<typeof fetchAllPrices>>,
+  closePricesBySes: Record<string, Record<string, number>>,
+  currentPrices: Awaited<ReturnType<typeof fetchAllPrices>>,
   memeCoin: string,
 ): Promise<number> {
   const DAILY_LEVERAGE = 10
@@ -69,7 +70,7 @@ async function autoClose(
   for (const row of pendingRows) {
     const base = row.symbol.replace('/USD', '')
     const priceKey = base === 'XAU' ? 'XAU' : base
-    const closePrice = prices[priceKey]?.price
+    const closePrice = closePricesBySes[row.session]?.[priceKey] ?? currentPrices[priceKey]?.price
     if (!closePrice) continue
 
     const actualPct = ((closePrice - row.open_price) / row.open_price) * 100
@@ -110,25 +111,34 @@ async function autoGenerate(session: SessionKey, memeCoin: string, dailyBalance:
   const symbols = ['BTC', 'ETH', 'XAU', memeCoin]
   const sessionDate = new Date().toISOString().slice(0, 10)
 
-  const [prices, ...histories] = await Promise.all([
-    fetchAllPrices(memeCoin),
+  // Build the exact UTC timestamp for this session's open time today
+  const openHour = SESSIONS[session].openUTC
+  const openTimestamp = new Date(`${sessionDate}T${String(openHour).padStart(2, '0')}:00:00Z`).getTime()
+
+  const [historicalPrices, ...histories] = await Promise.all([
+    // Fetch price at the exact session open time, not current price
+    fetchPricesAtTime(symbols, openTimestamp),
     ...symbols.map(s => fetchPriceHistory(s)),
     ...symbols.map(s => fetchWeeklyHistory(s)),
   ])
+
+  // Fall back to current prices for any symbol that had no historical data
+  const currentPrices = await fetchAllPrices(memeCoin)
 
   const priceHistories = histories.slice(0, symbols.length) as Awaited<ReturnType<typeof fetchPriceHistory>>[]
   const weeklyHistories = histories.slice(symbols.length) as number[][]
 
   const assets = symbols.map((s, i) => {
     const sym = s === 'XAU' ? 'XAU/USD' : `${s}/USD`
-    const price = (prices as Awaited<ReturnType<typeof fetchAllPrices>>)[s]?.price ?? 0
+    // Use historical open price; fall back to current if unavailable
+    const price = historicalPrices[s] ?? currentPrices[s]?.price ?? 0
     if (price === 0) return null
     const { prices: ph, volumes: vh } = priceHistories[i] ?? { prices: [], volumes: [] }
     const wp = weeklyHistories[i] ?? []
     return {
       symbol: sym,
       price,
-      change_24h: (prices as Awaited<ReturnType<typeof fetchAllPrices>>)[s]?.change_24h ?? 0,
+      change_24h: currentPrices[s]?.change_24h ?? 0,
       indicators: computeIndicators(ph, vh, price, wp),
       priceHistory: ph,
     }
@@ -207,8 +217,17 @@ export async function GET() {
     )
     if (pendingToClose.length > 0) {
       try {
-        const prices = await fetchAllPrices(memeCoin)
-        await autoClose(pendingToClose, prices, memeCoin)
+        // Fetch historical prices at each session's exact close time
+        const sessionSymbols = ['BTC', 'ETH', 'XAU', memeCoin]
+        const closePricesBySes: Record<string, Record<string, number>> = {}
+        for (const ses of [...new Set(pendingToClose.map(r => r.session))]) {
+          const closeHour = SESSIONS[ses as SessionKey].closeUTC
+          const closeTs = new Date(`${today}T${String(closeHour).padStart(2, '0')}:00:00Z`).getTime()
+          closePricesBySes[ses] = await fetchPricesAtTime(sessionSymbols, closeTs)
+        }
+        // Fall back to current prices for any gaps
+        const currentPrices = await fetchAllPrices(memeCoin)
+        await autoClose(pendingToClose, closePricesBySes, currentPrices, memeCoin)
       } catch (err) {
         console.error('[daily-sessions] Auto-close failed:', err)
       }
