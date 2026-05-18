@@ -33,11 +33,20 @@ function fmt(n: number): string {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function nowGMT(): string {
-  return new Date().toLocaleString('en-GB', {
-    day: 'numeric', month: 'long', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
-  })
+function ordinal(n: number): string {
+  const v = n % 100
+  const s = ['th', 'st', 'nd', 'rd']
+  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0])
+}
+
+function nowGMT1(): string {
+  const d = new Date(Date.now() + 60 * 60 * 1000) // shift to UTC+1
+  const day = ordinal(d.getUTCDate())
+  const month = d.toLocaleString('en-GB', { month: 'long', timeZone: 'UTC' })
+  const year = d.getUTCFullYear()
+  const h = String(d.getUTCHours()).padStart(2, '0')
+  const m = String(d.getUTCMinutes()).padStart(2, '0')
+  return `${day} ${month} ${year} ${h}:${m} GMT+1`
 }
 
 export function formatNewSignal(s: GeneratedSignal): string {
@@ -56,7 +65,7 @@ ${emoji} <b>Direction:</b> ${dir}
 📊 <b>Confidence:</b> ${pct}% ${confidenceStars(s.confidence)}
 📰 <b>Analysis:</b> ${s.reasoning}
 ━━━━━━━━━━━━━━━━
-🕐 ${nowGMT()}`
+🕐 ${nowGMT1()}`
 }
 
 export function formatTPHit(s: Signal): string {
@@ -71,7 +80,7 @@ Take Profit of <b>$${fmt(s.tp)}</b> reached!
 Entry: $${fmt(s.market_price)}
 Gain: +${pct.toFixed(2)}% (+${lev.toFixed(1)}% with ${s.leverage}x)
 ━━━━━━━━━━━━━━━━
-🕐 ${nowGMT()}`
+🕐 ${nowGMT1()}`
 }
 
 export function formatSLHit(s: Signal): string {
@@ -86,7 +95,7 @@ Stop Loss of <b>$${fmt(s.sl)}</b> triggered
 Entry: $${fmt(s.market_price)}
 Loss: -${pct.toFixed(2)}% (-${lev.toFixed(1)}% with ${s.leverage}x)
 ━━━━━━━━━━━━━━━━
-🕐 ${nowGMT()}`
+🕐 ${nowGMT1()}`
 }
 
 export async function notifyNewSignal(signal: GeneratedSignal): Promise<void> {
