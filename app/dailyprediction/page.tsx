@@ -165,6 +165,63 @@ function SessionCard({ session, todayRows }: SessionCardProps) {
   )
 }
 
+function HistoryCell({ row }: { row: DailySessionRow | undefined }) {
+  if (!row) return (
+    <td className="px-2 py-3 text-center text-gray-700 text-[10px]">No signal available</td>
+  )
+
+  const actualPct = row.close_price != null
+    ? ((row.close_price - row.open_price) / row.open_price) * 100
+    : null
+  const isUp = row.predicted_direction === 'up'
+
+  return (
+    <td className="px-2 py-2.5">
+      <div className="flex flex-col items-center gap-1 min-w-[100px]">
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded w-full text-center ${
+          isUp ? 'bg-[#0d1a3a] text-blue-400' : 'bg-[#2a1800] text-amber-400'
+        }`}>
+          {isUp ? '↑ UP' : '↓ DOWN'}
+        </span>
+        <span className="text-[10px] text-gray-500 font-mono">{fmtPrice(row.open_price)}</span>
+        <span className={`text-[10px] font-medium font-mono ${isUp ? 'text-[#22c55e]' : 'text-red-400'}`}>
+          → {fmtPrice(row.predicted_close)}
+        </span>
+        <span className={`text-[10px] font-mono ${isUp ? 'text-[#22c55e]/70' : 'text-red-400/70'}`}>
+          {fmtPct(row.predicted_pct)}
+        </span>
+        {row.close_price != null ? (
+          <>
+            <span className={`text-[10px] font-mono font-semibold ${actualPct != null && actualPct >= 0 ? 'text-[#22c55e]' : 'text-red-400'}`}>
+              {fmtPrice(row.close_price)}
+            </span>
+            <span className={`text-[10px] font-mono ${actualPct != null && actualPct >= 0 ? 'text-[#22c55e]/70' : 'text-red-400/70'}`}>
+              {fmtPct(actualPct)}
+            </span>
+          </>
+        ) : (
+          <span className="text-[10px] text-gray-600 italic">pending…</span>
+        )}
+        {row.outcome === 'correct' && (
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#0a2e1a] text-[#22c55e] w-full text-center">
+            ✓ {row.daily_pnl != null ? fmtUSD(row.daily_pnl) : 'correct'}
+          </span>
+        )}
+        {row.outcome === 'incorrect' && (
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#2e0a0a] text-red-400 w-full text-center">
+            ✗ {row.daily_pnl != null ? fmtUSD(row.daily_pnl) : 'wrong'}
+          </span>
+        )}
+        {row.outcome == null && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#0d1a2e] text-gray-500 w-full text-center">
+            open
+          </span>
+        )}
+      </div>
+    </td>
+  )
+}
+
 export default function DailyPredictionPage() {
   const [data, setData] = useState<{
     today: DailySessionRow[]
@@ -172,6 +229,7 @@ export default function DailyPredictionPage() {
     stats: DailyStats
     daily_balance: number
   } | null>(null)
+  const [historyTab, setHistoryTab] = useState<string>('asia')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -342,69 +400,95 @@ export default function DailyPredictionPage() {
             </div>
           )}
 
-          {/* History table */}
-          {history.length > 0 && (
-            <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-4">
-              <h2 className="text-sm font-bold text-white mb-3">Prediction History</h2>
-              <div className="overflow-auto max-h-[480px] rounded-lg border border-[#1e3a5f]">
-                <table className="w-full text-xs border-collapse min-w-[700px]">
-                  <thead className="sticky top-0 bg-[#0a1525] z-10">
-                    <tr>
-                      {['Date', 'Session', 'Asset', 'Open', 'Predicted', 'Actual', 'Pred %', 'Actual %', 'Outcome', 'P&L'].map(h => (
-                        <th key={h} className="text-left text-gray-400 font-medium px-3 py-2.5 border-b border-[#1e3a5f] whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {history.map((row, i) => {
-                      const actualPct = row.close_price != null
-                        ? ((row.close_price - row.open_price) / row.open_price) * 100
-                        : null
-                      const isEven = i % 2 === 0
-                      const meta = SESSION_META[row.session]
-
-                      return (
-                        <tr key={row.id} className={isEven ? 'bg-[#060d1a]/40' : ''}>
-                          <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{row.session_date}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <span className="mr-1">{meta?.flag}</span>
-                            <span className="text-gray-300">{meta?.name ?? row.session}</span>
-                          </td>
-                          <td className="px-3 py-2 text-white font-medium">{row.symbol.replace('/USD', '')}</td>
-                          <td className="px-3 py-2 text-gray-300">{fmtPrice(row.open_price)}</td>
-                          <td className={`px-3 py-2 font-medium ${row.predicted_direction === 'up' ? 'text-[#22c55e]' : 'text-red-400'}`}>
-                            {fmtPrice(row.predicted_close)}
-                          </td>
-                          <td className="px-3 py-2 text-gray-300">{row.close_price != null ? fmtPrice(row.close_price) : '⏳'}</td>
-                          <td className={`px-3 py-2 ${row.predicted_direction === 'up' ? 'text-[#22c55e]' : 'text-red-400'}`}>
-                            {fmtPct(row.predicted_pct)}
-                          </td>
-                          <td className={`px-3 py-2 ${actualPct != null ? actualPct >= 0 ? 'text-[#22c55e]' : 'text-red-400' : 'text-gray-600'}`}>
-                            {actualPct != null ? fmtPct(actualPct) : '—'}
-                          </td>
-                          <td className="px-3 py-2">
-                            {row.outcome === 'correct' && <span className="text-[#22c55e] font-bold">✓ Correct</span>}
-                            {row.outcome === 'incorrect' && <span className="text-red-400 font-bold">✗ Wrong</span>}
-                            {row.outcome == null && <span className="text-gray-600">Pending</span>}
-                          </td>
-                          <td className={`px-3 py-2 font-medium ${row.daily_pnl != null ? row.daily_pnl >= 0 ? 'text-[#22c55e]' : 'text-red-400' : 'text-gray-600'}`}>
-                            {row.daily_pnl != null ? fmtUSD(row.daily_pnl) : '—'}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+          {/* History — 3 tabbed session views */}
+          <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-bold text-white">Prediction History</h2>
+              {/* Session tabs */}
+              <div className="flex gap-1 bg-[#060d1a] rounded-lg p-1">
+                {SESSION_ORDER.map(ses => {
+                  const meta = SESSION_META[ses]
+                  const sesStats = stats?.bySession[ses]
+                  return (
+                    <button
+                      key={ses}
+                      onClick={() => setHistoryTab(ses)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                        historyTab === ses
+                          ? 'bg-[#1e3a5f] text-white'
+                          : 'text-gray-500 hover:text-gray-300'
+                      }`}
+                    >
+                      <span>{meta.flag}</span>
+                      <span>{meta.name}</span>
+                      {sesStats && sesStats.total > 0 && (
+                        <span className={`text-[10px] ml-0.5 ${
+                          Math.round(sesStats.correct / sesStats.total * 100) >= 60
+                            ? 'text-[#22c55e]' : 'text-gray-500'
+                        }`}>
+                          {Math.round(sesStats.correct / sesStats.total * 100)}%
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             </div>
-          )}
 
-          {!loading && history.length === 0 && (
-            <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-10 text-center">
-              <p className="text-gray-400 text-sm">No predictions yet.</p>
-              <p className="text-gray-600 text-xs mt-1">The first session open cron will populate this page.</p>
-            </div>
-          )}
+            {(() => {
+              const sesRows = history.filter(r => r.session === historyTab)
+
+              if (sesRows.length === 0) {
+                return (
+                  <p className="text-xs text-gray-600 text-center py-8">
+                    No history for {SESSION_META[historyTab]?.name} yet.
+                  </p>
+                )
+              }
+
+              // Group by date, columns are unique symbols
+              const byDate = new Map<string, Map<string, DailySessionRow>>()
+              for (const row of sesRows) {
+                if (!byDate.has(row.session_date)) byDate.set(row.session_date, new Map())
+                byDate.get(row.session_date)!.set(row.symbol, row)
+              }
+              const dates = [...byDate.keys()].sort((a, b) => b.localeCompare(a))
+
+              const symbolOrder = ['BTC/USD', 'ETH/USD', 'XAU/USD']
+              const allSymbols = [...new Set(sesRows.map(r => r.symbol))]
+              const others = allSymbols.filter(s => !symbolOrder.includes(s))
+              const columns = [...symbolOrder.filter(s => allSymbols.includes(s)), ...others]
+
+              return (
+                <div className="overflow-auto max-h-[420px] rounded-lg border border-[#1e3a5f]">
+                  <table className="w-full text-xs border-collapse">
+                    <thead className="sticky top-0 bg-[#0a1525] z-10">
+                      <tr>
+                        <th className="text-left text-gray-400 font-medium px-3 py-2.5 border-b border-[#1e3a5f] whitespace-nowrap">Date</th>
+                        {columns.map(col => (
+                          <th key={col} className="text-center text-gray-400 font-medium px-2 py-2.5 border-b border-[#1e3a5f] whitespace-nowrap">
+                            {col.replace('/USD', '')}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#1e3a5f]">
+                      {dates.map(date => (
+                        <tr key={date} className="hover:bg-[#0a1a2e]/50 transition-colors align-top">
+                          <td className="px-3 py-3 text-gray-400 text-[11px] font-mono whitespace-nowrap">
+                            {date}
+                          </td>
+                          {columns.map(col => (
+                            <HistoryCell key={col} row={byDate.get(date)?.get(col)} />
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })()}
+          </div>
 
         </div>
       </main>
