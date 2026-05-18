@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
       const slHit = isLong ? low <= signal.sl : high >= signal.sl
 
       if (tpHit) {
-        const { tpPnl, margin, position } = calcPnl(signal, accountBalance) as any
+        const { tpPnl } = calcPnl(signal, accountBalance)
         accountBalance += tpPnl
         balanceChanged = true
 
@@ -84,18 +84,10 @@ export async function GET(req: NextRequest) {
           .update({ status: 'tp_hit', tp_hit_at: new Date().toISOString() })
           .eq('id', signal.id)
 
-        if (groupId) {
-          const msg = formatTPHit(signal) +
-            `\n━━━━━━━━━━━━━━━━` +
-            `\n💵 Margin used : $${margin.toFixed(2)} (${signal.portfolio_pct}%)` +
-            `\n📦 Position    : $${position.toFixed(2)} (${signal.leverage}×)` +
-            `\n💰 Net profit  : +$${tpPnl.toFixed(2)}` +
-            `\n🏦 New balance : $${accountBalance.toFixed(2)}`
-          await sendMessage(groupId, msg)
-        }
+        if (groupId) await sendMessage(groupId, formatTPHit(signal))
         hits++
       } else if (slHit) {
-        const { slPnl, margin, position } = calcPnl(signal, accountBalance) as any
+        const { slPnl } = calcPnl(signal, accountBalance)
         accountBalance -= slPnl
         balanceChanged = true
 
@@ -104,15 +96,7 @@ export async function GET(req: NextRequest) {
           .update({ status: 'sl_hit', sl_hit_at: new Date().toISOString() })
           .eq('id', signal.id)
 
-        if (groupId) {
-          const msg = formatSLHit(signal) +
-            `\n━━━━━━━━━━━━━━━━` +
-            `\n💵 Margin used : $${margin.toFixed(2)} (${signal.portfolio_pct}%)` +
-            `\n📦 Position    : $${position.toFixed(2)} (${signal.leverage}×)` +
-            `\n💸 Net loss    : -$${slPnl.toFixed(2)}` +
-            `\n🏦 New balance : $${accountBalance.toFixed(2)}`
-          await sendMessage(groupId, msg)
-        }
+        if (groupId) await sendMessage(groupId, formatSLHit(signal))
         hits++
       }
     }
