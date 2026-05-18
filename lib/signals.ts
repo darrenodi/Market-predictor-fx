@@ -309,21 +309,28 @@ export async function generateSignals(assets: MarketData[], performance?: Perfor
           return null
         }
 
-        // Enforce minimum SL distance; design target is 0.5:1 R/R (SL = 2× TP)
+        // Enforce minimum distances; design target is 0.5:1 R/R (SL = 2× TP)
         const isGold = sig.symbol === 'XAU/USD'
-        const minSlPct = isGold ? 0.001 : 0.002   // 0.1% gold | 0.2% crypto (≈ TP target level)
+        const minTpPct = 0.0010   // TP must be at least 0.10% from entry
+        const minSlPct = isGold ? 0.001 : 0.002
         const slDist = Math.abs(price - sl)
         const tpDist = Math.abs(tp - price)
         const rr = tpDist / slDist
 
-        if (slDist / price < minSlPct) {
+        if (tpDist / price < minTpPct) {
+          // TP too close to entry — reset both to pre-computed targets
+          const newTpDist = price * 0.0015
+          tp = sig.direction === 'long' ? price + newTpDist : price - newTpDist
+          sl = sig.direction === 'long' ? price - newTpDist * 2 : price + newTpDist * 2
+          console.warn(`[signals] Fixed ${sig.symbol} TP too close ($${tpDist.toFixed(4)}), reset to 0.15%`)
+        } else if (slDist / price < minSlPct) {
           // SL dangerously tight — expand to minimum and set TP at 0.5:1
           const newSlDist = price * minSlPct
           sl = sig.direction === 'long' ? price - newSlDist : price + newSlDist
           tp = sig.direction === 'long' ? price + newSlDist * 0.5 : price - newSlDist * 0.5
           console.warn(`[signals] Expanded ${sig.symbol} SL to min ${(minSlPct*100).toFixed(2)}%, set TP to 0.5:1`)
         } else if (rr > 2.0) {
-          // TP unrealistically far (Gemini reverted to old high-R/R style) — clamp to 0.5:1
+          // TP unrealistically far — clamp to 0.5:1
           tp = sig.direction === 'long' ? price + slDist * 0.5 : price - slDist * 0.5
           console.warn(`[signals] Clamped ${sig.symbol} TP from ${rr.toFixed(2)}:1 to 0.5:1`)
         }
