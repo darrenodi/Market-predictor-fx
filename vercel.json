@@ -1,10 +1,12 @@
 {
   "crons": [
-    { "path": "/api/cron/session-open?session=asia",     "schedule": "0 0 * * *"  },
-    { "path": "/api/cron/session-close?session=asia",    "schedule": "0 8 * * *"  },
-    { "path": "/api/cron/session-open?session=london",   "schedule": "0 9 * * *"  },
-    { "path": "/api/cron/session-close?session=london",  "schedule": "0 17 * * *" },
-    { "path": "/api/cron/session-open?session=newyork",  "schedule": "0 13 * * *" },
-    { "path": "/api/cron/session-close?session=newyork", "schedule": "0 21 * * *" }
+    { "path": "/api/cron/update-signals",                "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/check-prices",                  "schedule": "*/5 * * * *"  },
+    { "path": "/api/cron/session-open?session=asia",     "schedule": "0 0 * * *"    },
+    { "path": "/api/cron/session-close?session=asia",    "schedule": "0 8 * * *"    },
+    { "path": "/api/cron/session-open?session=london",   "schedule": "0 9 * * *"    },
+    { "path": "/api/cron/session-close?session=london",  "schedule": "0 17 * * *"   },
+    { "path": "/api/cron/session-open?session=newyork",  "schedule": "0 13 * * *"   },
+    { "path": "/api/cron/session-close?session=newyork", "schedule": "0 21 * * *"   }
   ]
 }
