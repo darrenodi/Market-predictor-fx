@@ -42,6 +42,70 @@ function sessionsToGenerate(): SessionKey[] {
   return out
 }
 
+// Sessions whose close time has already passed today
+function sessionsToClose(): SessionKey[] {
+  const h = new Date().getUTCHours()
+  const out: SessionKey[] = []
+  if (h >= SESSIONS.asia.closeUTC)    out.push('asia')
+  if (h >= SESSIONS.london.closeUTC)  out.push('london')
+  if (h >= SESSIONS.newyork.closeUTC) out.push('newyork')
+  return out
+}
+
+async function autoClose(
+  pendingRows: DailySessionRow[],
+  prices: Awaited<ReturnType<typeof fetchAllPrices>>,
+  memeCoin: string,
+): Promise<number> {
+  const DAILY_LEVERAGE = 10
+  const DAILY_PCT = 5
+  let updated = 0
+
+  const { data: config } = await supabaseAdmin.from('config').select('key, value')
+  const cfg = Object.fromEntries((config ?? []).map(r => [r.key, r.value]))
+  let dailyBalance = parseFloat(cfg.daily_balance ?? '10000')
+  let balanceChanged = false
+
+  for (const row of pendingRows) {
+    const base = row.symbol.replace('/USD', '')
+    const priceKey = base === 'XAU' ? 'XAU' : base
+    const closePrice = prices[priceKey]?.price
+    if (!closePrice) continue
+
+    const actualPct = ((closePrice - row.open_price) / row.open_price) * 100
+    const actualDirection = actualPct >= 0 ? 'up' : 'down'
+    const outcome = actualDirection === row.predicted_direction ? 'correct' : 'incorrect'
+
+    const margin = (row.daily_balance_before ?? dailyBalance) * (DAILY_PCT / 100)
+    const position = margin * DAILY_LEVERAGE
+    const pnl = outcome === 'correct'
+      ? (Math.abs(actualPct) / 100) * position
+      : -(Math.abs(actualPct) / 100) * position
+
+    dailyBalance += pnl
+    balanceChanged = true
+
+    await supabaseAdmin.from('daily_sessions').update({
+      close_price: closePrice,
+      outcome,
+      daily_pnl: pnl,
+      closed_at: new Date().toISOString(),
+    }).eq('id', row.id)
+
+    updated++
+  }
+
+  if (balanceChanged) {
+    if (dailyBalance < 1000) dailyBalance = 10000
+    await supabaseAdmin.from('config').upsert(
+      { key: 'daily_balance', value: dailyBalance.toFixed(2) },
+      { onConflict: 'key' },
+    )
+  }
+
+  return updated
+}
+
 async function autoGenerate(session: SessionKey, memeCoin: string, dailyBalance: number): Promise<void> {
   const symbols = ['BTC', 'ETH', 'XAU', memeCoin]
   const sessionDate = new Date().toISOString().slice(0, 10)
@@ -136,8 +200,23 @@ export async function GET() {
       }
     }
 
-    // Re-fetch if we generated anything
-    const { data: freshRows } = needed.length > 0
+    // Auto-close sessions whose close time has passed but still have no close_price
+    const shouldClose = sessionsToClose()
+    const pendingToClose = todayRows.filter(
+      (r: DailySessionRow) => r.close_price === null && shouldClose.includes(r.session as SessionKey)
+    )
+    if (pendingToClose.length > 0) {
+      try {
+        const prices = await fetchAllPrices(memeCoin)
+        await autoClose(pendingToClose, prices, memeCoin)
+      } catch (err) {
+        console.error('[daily-sessions] Auto-close failed:', err)
+      }
+    }
+
+    // Re-fetch if we generated or closed anything
+    const needsRefresh = needed.length > 0 || pendingToClose.length > 0
+    const { data: freshRows } = needsRefresh
       ? await supabase.from('daily_sessions').select('*').order('created_at', { ascending: false }).limit(300)
       : { data: rows }
 
