@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { SESSIONS, SessionKey } from '@/lib/daily-sessions'
 
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
 function isAuthorized(req: NextRequest): boolean {
   if (process.env.NODE_ENV === 'development') return true
   const auth = req.headers.get('authorization')
