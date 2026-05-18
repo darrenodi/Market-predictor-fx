@@ -267,7 +267,10 @@ export default function DailyPredictionPage() {
             {loading ? (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {[1, 2, 3].map(i => (
-                  <div key={i} className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-4 h-48 animate-pulse" />
+                  <div key={i} className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-4 h-48 flex flex-col items-center justify-center gap-2 animate-pulse">
+                    <p className="text-xs text-gray-500">ModuVise is thinking…</p>
+                    <p className="text-[10px] text-gray-600">Generating session predictions</p>
+                  </div>
                 ))}
               </div>
             ) : (
