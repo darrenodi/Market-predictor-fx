@@ -53,12 +53,13 @@ function Cell({ sig }: CellProps) {
   return (
     <td className="px-3 py-3">
       <div className="flex flex-col items-center gap-1">
-        {/* Direction */}
+        {/* Direction + confidence */}
         <span className={`text-xs font-bold px-2 py-0.5 rounded w-full text-center ${
           sig.direction === 'long' ? 'bg-[#0d1a3a] text-blue-400' : 'bg-[#2a1800] text-amber-400'
         }`}>
           {sig.direction.toUpperCase()}
         </span>
+        <span className="text-[10px] text-gray-500">{Math.round(sig.confidence * 100)}% confidence</span>
         {/* Entry */}
         <span className="text-[10px] text-gray-400 font-mono">${fmtPrice(sig.market_price)}</span>
         {/* TP / SL prices */}

@@ -127,11 +127,10 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
     Support    : ${ind.supports.map(plain).join(' | ') || 'none found'} ${ind.nearestSupport ? `(nearest: ${plain(ind.nearestSupport)}, ${(((a.price - ind.nearestSupport) / a.price) * 100).toFixed(3)}% away)` : ''}
     ATR(5-min) : ${plain(ind.atr)} (${ind.atrPct.toFixed(4)}% per 5 min)`
 
-      // TP target: 0.15% of price (BTC ~$135, ETH ~$4.50, XAU ~$5, DOGE ATR-driven)
-      // SL: 2× TP — wide enough to survive routine wicks; accepts 0.5:1 R/R for higher win rate
+      // TP = SL = 0.30% of price → 1:1 R/R, needs only >50% win rate
       const atr = ind.atr
-      const tpDist = Math.max(a.price * 0.0015, atr * 1.5)   // 0.15% of price; ATR as minimum floor
-      const slDist = tpDist * 2                                 // SL 2× TP for wick survival
+      const tpDist = Math.max(a.price * 0.003, atr * 1.5)   // 0.30% of price; ATR as minimum floor
+      const slDist = tpDist                                    // 1:1 R/R
 
       const longTp  = a.price + tpDist
       const longSl  = a.price - slDist
@@ -146,7 +145,7 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
       const trendNote = `preferred direction: ${trendDir} (price ${a.price >= ind.ema50 ? 'above' : 'below'} EMA50 — counter-trend needs strong confluence)`
 
       const priceDecimals = a.price < 1 ? 6 : 2
-      slTpGuide = `  PRE-COMPUTED TP/SL (TP=0.15% of price | SL=2×TP | ~0.5:1 R/R — needs >67% win rate):
+      slTpGuide = `  PRE-COMPUTED TP/SL (TP=SL=0.30% of price | 1:1 R/R — needs >50% win rate):
     IF LONG : TP=${plain(cappedLongTp)} | SL=${plain(longSl)}
     IF SHORT: TP=${plain(cappedShortTp)} | SL=${plain(shortSl)}
     TP move: $${tpDist.toFixed(priceDecimals)} (${(tpDist / a.price * 100).toFixed(3)}%) | SL move: $${slDist.toFixed(priceDecimals)} (${(slDist / a.price * 100).toFixed(3)}%)
@@ -182,9 +181,9 @@ ${whaleLine}`
 
   // Dynamic per-asset TP/SL targets in dollar terms
   const assetTpLines = assets.map(a => {
-    const tpTarget = Math.max(a.price * 0.0015, 0)
+    const tpTarget = Math.max(a.price * 0.003, 0)
     const dec = a.price < 1 ? 6 : a.price < 100 ? 3 : 2
-    return `  ${a.symbol.padEnd(10)}: TP ~$${tpTarget.toFixed(dec)} | SL ~$${(tpTarget * 2).toFixed(dec)}  (0.15% / 0.30% of $${plain(a.price)})`
+    return `  ${a.symbol.padEnd(10)}: TP ~$${tpTarget.toFixed(dec)} | SL ~$${tpTarget.toFixed(dec)}  (0.30% / 0.30% of $${plain(a.price)})`
   }).join('\n')
 
   return `You are a professional prop trader running a live 24/7 futures scalping desk. Every 30 minutes you analyse each asset and generate a signal. You think like a seasoned market maker — you understand stop-hunts, session liquidity patterns, and when NOT to trade is just as important as when to trade.
@@ -198,9 +197,8 @@ ${perfBlock}
 ━━━ PRICE MOVE TARGETS (30-min scalp) ━━━
 ${assetTpLines}
 
-Design: TP = 0.15% of price | SL = 2× TP (0.30% of price)
-Rationale: wider SL survives routine wick noise; you compensate with high selectivity.
-At 0.5:1 R/R you need >67% win rate — so only take high-conviction setups.
+Design: TP = SL = 0.30% of price | 1:1 R/R
+Rationale: equal TP and SL — you only need >50% win rate to be profitable.
 
 ━━━ MARKET DATA ━━━
 ${assetBlocks}
@@ -311,8 +309,8 @@ export async function generateSignals(assets: MarketData[], performance?: Perfor
 
         // Enforce minimum distances; design target is 0.5:1 R/R (SL = 2× TP)
         const isGold = sig.symbol === 'XAU/USD'
-        const minTpPct = 0.0010   // TP must be at least 0.10% from entry
-        const minSlPct = isGold ? 0.001 : 0.002
+        const minTpPct = 0.0015   // TP must be at least 0.15% from entry
+        const minSlPct = isGold ? 0.002 : 0.002
         const slDist = Math.abs(price - sl)
         const tpDist = Math.abs(tp - price)
         const rr = tpDist / slDist
