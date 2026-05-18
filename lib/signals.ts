@@ -319,31 +319,12 @@ export async function generateSignals(assets: MarketData[], performance?: Perfor
           return null
         }
 
-        // Enforce minimum distances; design target is 0.5:1 R/R (SL = 2× TP)
-        const isGold = sig.symbol === 'XAU/USD'
-        const minTpPct = 0.0015   // TP must be at least 0.15% from entry
-        const minSlPct = isGold ? 0.002 : 0.002
-        const slDist = Math.abs(price - sl)
-        const tpDist = Math.abs(tp - price)
-        const rr = tpDist / slDist
-
-        if (tpDist / price < minTpPct) {
-          // TP too close to entry — reset both to pre-computed targets
-          const newTpDist = price * 0.0015
-          tp = sig.direction === 'long' ? price + newTpDist : price - newTpDist
-          sl = sig.direction === 'long' ? price - newTpDist * 2 : price + newTpDist * 2
-          console.warn(`[signals] Fixed ${sig.symbol} TP too close ($${tpDist.toFixed(4)}), reset to 0.15%`)
-        } else if (slDist / price < minSlPct) {
-          // SL dangerously tight — expand to minimum and set TP at 0.5:1
-          const newSlDist = price * minSlPct
-          sl = sig.direction === 'long' ? price - newSlDist : price + newSlDist
-          tp = sig.direction === 'long' ? price + newSlDist * 0.5 : price - newSlDist * 0.5
-          console.warn(`[signals] Expanded ${sig.symbol} SL to min ${(minSlPct*100).toFixed(2)}%, set TP to 0.5:1`)
-        } else if (rr > 2.0) {
-          // TP unrealistically far — clamp to 0.5:1
-          tp = sig.direction === 'long' ? price + slDist * 0.5 : price - slDist * 0.5
-          console.warn(`[signals] Clamped ${sig.symbol} TP from ${rr.toFixed(2)}:1 to 0.5:1`)
-        }
+        // Always enforce our fee-adjusted 1:1 TP/SL — Gemini decides direction only
+        const feeRT = sig.symbol === 'BTC/USD' ? 0.0002 : sig.symbol === 'XAU/USD' ? 0 : 0.0008
+        const enforcedPct = feeRT + 0.0025   // fees + 0.25% net target
+        const enforcedDist = price * enforcedPct
+        tp = sig.direction === 'long' ? price + enforcedDist : price - enforcedDist
+        sl = sig.direction === 'long' ? price - enforcedDist : price + enforcedDist
 
         return { ...sig, tp, sl }
       }).filter((s): s is GeneratedSignal => s !== null)
