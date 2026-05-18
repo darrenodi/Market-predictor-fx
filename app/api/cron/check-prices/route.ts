@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { fetchAllPrices } from '@/lib/prices'
+import { fetchHighLow } from '@/lib/prices'
 import { sendMessage, formatTPHit, formatSLHit } from '@/lib/telegram'
 import { Signal } from '@/types'
 
@@ -48,13 +48,13 @@ export async function GET(req: NextRequest) {
 
     const { data: config } = await supabaseAdmin.from('config').select('key, value')
     const cfg = Object.fromEntries((config ?? []).map(r => [r.key, r.value]))
-    const memeCoin: string = cfg.meme_coin ?? 'DOGE'
     let accountBalance = parseFloat(cfg.account_balance ?? '10000')
     const topupLog: Array<{ amount: number; balance_before: number; date: string }> =
       JSON.parse(cfg.account_topup_log ?? '[]')
 
-    const prices = await fetchAllPrices(memeCoin)
     const groupId = process.env.TELEGRAM_GROUP_ID ?? ''
+    // Look back 7 minutes to cover the full interval between cron ticks
+    const windowStart = Date.now() - 7 * 60 * 1000
 
     let hits = 0
     let balanceChanged = false
@@ -62,13 +62,17 @@ export async function GET(req: NextRequest) {
     for (const signal of activeSignals as Signal[]) {
       const base = signal.symbol.replace('/USD', '')
       const priceKey = base === 'XAU' ? 'XAU' : base
-      const currentPrice = prices[priceKey]?.price
 
-      if (!currentPrice) continue
+      // Use the signal's creation time as the start if it's more recent than the window
+      const fromMs = Math.max(windowStart, new Date(signal.created_at).getTime())
+      const range = await fetchHighLow(priceKey, fromMs, Date.now())
+      if (!range) continue
 
+      const { high, low, current: currentPrice } = range
       const isLong = signal.direction === 'long'
-      const tpHit = isLong ? currentPrice >= signal.tp : currentPrice <= signal.tp
-      const slHit = isLong ? currentPrice <= signal.sl : currentPrice >= signal.sl
+      // Check if price touched TP or SL at any point in the window
+      const tpHit = isLong ? high >= signal.tp : low <= signal.tp
+      const slHit = isLong ? low <= signal.sl : high >= signal.sl
 
       if (tpHit) {
         const { tpPnl, margin, position } = calcPnl(signal, accountBalance) as any

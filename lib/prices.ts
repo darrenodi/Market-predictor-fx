@@ -306,6 +306,35 @@ export async function fetchPriceAtTime(symbol: string, utcTimestamp: number): Pr
   }
 }
 
+// Fetch the high and low price for a symbol over a time range.
+// Used by check-prices to detect TP/SL touches between cron ticks.
+export async function fetchHighLow(
+  symbol: string,
+  fromMs: number,
+  toMs: number,
+): Promise<{ high: number; low: number; current: number } | null> {
+  const id = GECKO_ID[symbol]
+  if (!id) return null
+
+  try {
+    const from = Math.floor(fromMs / 1000)
+    const to   = Math.floor(toMs / 1000)
+    const url = `https://api.coingecko.com/api/v3/coins/${id}/market_chart/range?vs_currency=usd&from=${from}&to=${to}`
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return null
+    const data = await res.json()
+    const prices = (data.prices as [number, number][]).map(([, p]) => p)
+    if (!prices.length) return null
+    return {
+      high: Math.max(...prices),
+      low:  Math.min(...prices),
+      current: prices[prices.length - 1],
+    }
+  } catch {
+    return null
+  }
+}
+
 // Fetch prices for all session symbols at a specific UTC timestamp.
 // Falls back to current price if historical data is unavailable.
 export async function fetchPricesAtTime(
