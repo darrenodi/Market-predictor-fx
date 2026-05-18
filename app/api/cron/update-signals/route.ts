@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { after } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, computeIndicators } from '@/lib/prices'
 import { fetchAllNews, fetchWhaleAlerts } from '@/lib/news'
@@ -23,6 +24,72 @@ function isLondonOpenHour(): boolean {
   return h === 8
 }
 
+async function runSignalUpdate(memeCoin: string) {
+  const symbols = ['BTC', 'ETH', 'XAU', memeCoin]
+
+  const [prices, news, whaleAlerts, { data: activeSignals }, performance, ...histories] = await Promise.all([
+    fetchAllPrices(memeCoin),
+    fetchAllNews(symbols),
+    fetchWhaleAlerts(),
+    supabaseAdmin.from('signals').select('*').eq('status', 'active'),
+    fetchPerformanceSummary(),
+    ...symbols.map(s => fetchPriceHistory(s)),
+    ...symbols.map(s => fetchWeeklyHistory(s)),
+  ])
+
+  const priceHistories = histories.slice(0, symbols.length)
+  const weeklyHistories = histories.slice(symbols.length)
+
+  const marketData = symbols
+    .map((s, i) => {
+      const sym = s === 'XAU' ? 'XAU/USD' : `${s}/USD`
+      const existing = (activeSignals ?? []).find(sig => sig.symbol === sym)
+      const price = prices[s]?.price ?? 0
+      const { prices: ph, volumes: vh } = (priceHistories[i] as { prices: number[], volumes: number[] }) ?? { prices: [], volumes: [] }
+      const wp = (weeklyHistories[i] as number[]) ?? []
+      return {
+        symbol: sym,
+        price,
+        change_24h: prices[s]?.change_24h ?? 0,
+        news: news[s] ?? [],
+        whales: whaleAlerts.filter(w => w.symbol === s),
+        indicators: computeIndicators(ph, vh, price, wp),
+        currentSignal: existing ? {
+          direction: existing.direction,
+          entry: existing.market_price,
+          tp: existing.tp,
+          sl: existing.sl,
+          confidence: existing.confidence,
+          ageMinutes: Math.floor((Date.now() - new Date(existing.created_at).getTime()) / 60000),
+        } : null,
+      }
+    })
+    .filter(d => d.price > 0)
+
+  if (marketData.length === 0) return
+
+  const signals = await generateSignals(marketData, performance ?? undefined)
+
+  const cutoff = new Date(Date.now() - 28 * 60 * 1000).toISOString()
+  await supabaseAdmin.from('signals').update({ status: 'expired' })
+    .eq('status', 'active')
+    .lt('created_at', cutoff)
+
+  await supabaseAdmin.from('price_history').insert(
+    Object.entries(prices).map(([sym, d]) => ({
+      symbol: sym === 'XAU' ? 'XAU/USD' : `${sym}/USD`,
+      price: d.price,
+    })),
+  )
+
+  for (const sig of signals) {
+    await supabaseAdmin.from('signals').insert({ ...sig, status: 'active' })
+    await notifyNewSignal(sig)
+  }
+
+  console.log(`[update-signals] Generated ${signals.length} signals`)
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -30,87 +97,22 @@ export async function GET(req: NextRequest) {
 
   if (isLondonOpenHour()) {
     console.log('[update-signals] Skipped — London open stop-hunt hour (08:00–09:00 UTC)')
-    return NextResponse.json({ ok: true, skipped: 'london_open', signals_generated: 0 })
+    return NextResponse.json({ ok: true, skipped: 'london_open' })
   }
 
-  try {
-    // Load config
-    const { data: config } = await supabaseAdmin.from('config').select('key, value')
-    const cfg = Object.fromEntries((config ?? []).map(r => [r.key, r.value]))
-    const memeCoin: string = cfg.meme_coin ?? 'DOGE'
-    const symbols = ['BTC', 'ETH', 'XAU', memeCoin]
+  const { data: config } = await supabaseAdmin.from('config').select('key, value')
+  const cfg = Object.fromEntries((config ?? []).map(r => [r.key, r.value]))
+  const memeCoin: string = cfg.meme_coin ?? 'DOGE'
 
-    // Parallel fetch everything (daily + weekly history + performance run simultaneously)
-    const [prices, news, whaleAlerts, { data: activeSignals }, performance, ...histories] = await Promise.all([
-      fetchAllPrices(memeCoin),
-      fetchAllNews(symbols),
-      fetchWhaleAlerts(),
-      supabaseAdmin.from('signals').select('*').eq('status', 'active'),
-      fetchPerformanceSummary(),
-      ...symbols.map(s => fetchPriceHistory(s)),
-      ...symbols.map(s => fetchWeeklyHistory(s)),
-    ])
-
-    const priceHistories = histories.slice(0, symbols.length)
-    const weeklyHistories = histories.slice(symbols.length)
-
-    // Build MarketData array with full technicals + previous signal context
-    const marketData = symbols
-      .map((s, i) => {
-        const sym = s === 'XAU' ? 'XAU/USD' : `${s}/USD`
-        const existing = (activeSignals ?? []).find(sig => sig.symbol === sym)
-        const price = prices[s]?.price ?? 0
-        const { prices: ph, volumes: vh } = (priceHistories[i] as { prices: number[], volumes: number[] }) ?? { prices: [], volumes: [] }
-        const wp = (weeklyHistories[i] as number[]) ?? []
-        return {
-          symbol: sym,
-          price,
-          change_24h: prices[s]?.change_24h ?? 0,
-          news: news[s] ?? [],
-          whales: whaleAlerts.filter(w => w.symbol === s),
-          indicators: computeIndicators(ph, vh, price, wp),
-          currentSignal: existing ? {
-            direction: existing.direction,
-            entry: existing.market_price,
-            tp: existing.tp,
-            sl: existing.sl,
-            confidence: existing.confidence,
-            ageMinutes: Math.floor((Date.now() - new Date(existing.created_at).getTime()) / 60000),
-          } : null,
-        }
-      })
-      .filter(d => d.price > 0)
-
-    if (marketData.length === 0) {
-      return NextResponse.json({ error: 'No price data available' }, { status: 500 })
+  // Return 200 immediately so the cron service doesn't time out.
+  // after() keeps the function alive on Vercel to finish the work.
+  after(async () => {
+    try {
+      await runSignalUpdate(memeCoin)
+    } catch (err) {
+      console.error('[update-signals] background error:', err)
     }
+  })
 
-    // Generate signals via Gemini — pass performance so AI learns from past results
-    const signals = await generateSignals(marketData, performance ?? undefined)
-
-    // Only expire signals older than 28 minutes — don't wipe fresh ones
-    const cutoff = new Date(Date.now() - 28 * 60 * 1000).toISOString()
-    await supabaseAdmin.from('signals').update({ status: 'expired' })
-      .eq('status', 'active')
-      .lt('created_at', cutoff)
-
-    // Store price history snapshot
-    await supabaseAdmin.from('price_history').insert(
-      Object.entries(prices).map(([sym, d]) => ({
-        symbol: sym === 'XAU' ? 'XAU/USD' : `${sym}/USD`,
-        price: d.price,
-      })),
-    )
-
-    // Insert new signals and notify Telegram
-    for (const sig of signals) {
-      await supabaseAdmin.from('signals').insert({ ...sig, status: 'active' })
-      await notifyNewSignal(sig)
-    }
-
-    return NextResponse.json({ ok: true, signals_generated: signals.length })
-  } catch (err) {
-    console.error('/api/cron/update-signals error:', err)
-    return NextResponse.json({ error: String(err) }, { status: 500 })
-  }
+  return NextResponse.json({ ok: true, status: 'processing' })
 }
