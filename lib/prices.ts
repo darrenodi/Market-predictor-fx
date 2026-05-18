@@ -209,7 +209,7 @@ export async function fetchCurrentPrices(symbols: string[]): Promise<PriceMap> {
   if (!ids) return {}
 
   const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`
-  const res = await fetch(url, { next: { revalidate: 60 } })
+  const res = await fetch(url, { cache: 'no-store' })
   if (!res.ok) throw new Error(`CoinGecko /simple/price failed: ${res.status}`)
 
   const raw = await res.json()
