@@ -127,20 +127,9 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
     Support    : ${ind.supports.map(plain).join(' | ') || 'none found'} ${ind.nearestSupport ? `(nearest: ${plain(ind.nearestSupport)}, ${(((a.price - ind.nearestSupport) / a.price) * 100).toFixed(3)}% away)` : ''}
     ATR(5-min) : ${plain(ind.atr)} (${ind.atrPct.toFixed(4)}% per 5 min)`
 
-      // Fee-aware TP: net target 0.25% of position after round-trip fees
-      // BTC 0.01% per side = 0.02% RT → TP 0.30% (net 0.28%)
-      // ETH/meme 0.04% per side = 0.08% RT → TP 0.35% (net 0.27%)
-      // XAU 0% fees → TP 0.30% (net 0.30%)
-      const feeRoundTrip = a.symbol === 'ETH/USD' || (!['BTC/USD','XAU/USD'].includes(a.symbol))
-        ? 0.0008   // 0.08% — ETH + meme coins
-        : a.symbol === 'BTC/USD' ? 0.0002   // 0.02%
-        : 0                                  // XAU
-      const netTarget = 0.0025   // 0.25% net return on position after fees
-      const tpPct = feeRoundTrip + netTarget
-
       const atr = ind.atr
-      const tpDist = Math.max(a.price * tpPct, atr * 1.5)
-      const slDist = tpDist   // 1:1 R/R
+      const tpDist = Math.max(a.price * 0.0015, atr * 1.5)   // TP = 0.15% — hits easily in 30 min
+      const slDist = tpDist * 2                                // SL = 0.30% — wide enough to survive wicks
 
       const longTp  = a.price + tpDist
       const longSl  = a.price - slDist
@@ -155,10 +144,10 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
       const trendNote = `preferred direction: ${trendDir} (price ${a.price >= ind.ema50 ? 'above' : 'below'} EMA50 — counter-trend needs strong confluence)`
 
       const priceDecimals = a.price < 1 ? 6 : 2
-      slTpGuide = `  PRE-COMPUTED TP/SL (1:1 R/R | fee-adjusted — net ~0.25% return after fees):
+      slTpGuide = `  PRE-COMPUTED TP/SL (TP=0.15% | SL=0.30% | 0.5:1 R/R — needs >67% win rate):
     IF LONG : TP=${plain(cappedLongTp)} | SL=${plain(longSl)}
     IF SHORT: TP=${plain(cappedShortTp)} | SL=${plain(shortSl)}
-    TP move: $${tpDist.toFixed(priceDecimals)} (${(tpPct*100).toFixed(3)}% incl. ${(feeRoundTrip*100).toFixed(3)}% fees) | SL move: $${slDist.toFixed(priceDecimals)}
+    TP move: $${tpDist.toFixed(priceDecimals)} (${(tpDist/a.price*100).toFixed(3)}%) | SL move: $${slDist.toFixed(priceDecimals)} (${(slDist/a.price*100).toFixed(3)}%)
     ATR=${plain(atr)} | Nearest resistance: ${plain(ind.nearestResistance)} | Nearest support: ${plain(ind.nearestSupport)}
     Trend: ${trendNote}`
 
@@ -191,11 +180,10 @@ ${whaleLine}`
 
   // Dynamic per-asset TP/SL targets in dollar terms
   const assetTpLines = assets.map(a => {
-    const feeRT = a.symbol === 'BTC/USD' ? 0.0002 : a.symbol === 'XAU/USD' ? 0 : 0.0008
-    const tpPct = feeRT + 0.0025
-    const tpTarget = Math.max(a.price * tpPct, 0)
+    const tpTarget = a.price * 0.0015
+    const slTarget = a.price * 0.003
     const dec = a.price < 1 ? 6 : a.price < 100 ? 3 : 2
-    return `  ${a.symbol.padEnd(10)}: TP ~$${tpTarget.toFixed(dec)} | SL ~$${tpTarget.toFixed(dec)}  (${(tpPct*100).toFixed(2)}% incl. fees | net ~0.25% after ${(feeRT*100).toFixed(2)}% fees)`
+    return `  ${a.symbol.padEnd(10)}: TP ~$${tpTarget.toFixed(dec)} | SL ~$${slTarget.toFixed(dec)}  (0.15% / 0.30% of $${plain(a.price)})`
   }).join('\n')
 
   return `You are a professional prop trader running a live 24/7 futures scalping desk. Every 30 minutes you analyse each asset and generate a signal. You think like a seasoned market maker — you understand stop-hunts, session liquidity patterns, and when NOT to trade is just as important as when to trade.
@@ -209,8 +197,7 @@ ${perfBlock}
 ━━━ PRICE MOVE TARGETS (30-min scalp) ━━━
 ${assetTpLines}
 
-Design: TP = SL = fees + 0.25% net | 1:1 R/R — profitable at >50% win rate.
-BTC: 0.27% TP/SL | ETH/meme: 0.33% TP/SL | XAU: 0.25% TP/SL (no fees).
+Design: TP=0.15% | SL=0.30% — small TP hits frequently in 30 min, wide SL survives wicks.
 
 ━━━ MARKET DATA ━━━
 ${assetBlocks}
@@ -319,12 +306,12 @@ export async function generateSignals(assets: MarketData[], performance?: Perfor
           return null
         }
 
-        // Always enforce our fee-adjusted 1:1 TP/SL — Gemini decides direction only
-        const feeRT = sig.symbol === 'BTC/USD' ? 0.0002 : sig.symbol === 'XAU/USD' ? 0 : 0.0008
-        const enforcedPct = feeRT + 0.0025   // fees + 0.25% net target
-        const enforcedDist = price * enforcedPct
-        tp = sig.direction === 'long' ? price + enforcedDist : price - enforcedDist
-        sl = sig.direction === 'long' ? price - enforcedDist : price + enforcedDist
+        // Enforce original working targets: TP=0.15%, SL=0.30% (0.5:1 R/R)
+        // Small TP hits easily in 30 min; wide SL survives wicks
+        const tpDist = price * 0.0015
+        const slDist = price * 0.003
+        tp = sig.direction === 'long' ? price + tpDist : price - tpDist
+        sl = sig.direction === 'long' ? price - slDist : price + slDist
 
         return { ...sig, tp, sl }
       }).filter((s): s is GeneratedSignal => s !== null)
