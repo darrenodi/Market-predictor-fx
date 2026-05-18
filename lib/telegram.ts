@@ -100,9 +100,10 @@ Loss: -${pct.toFixed(2)}% (-${lev.toFixed(1)}% with ${s.leverage}x)
 
 export async function notifyNewSignals(signals: GeneratedSignal[]): Promise<void> {
   const groupId = process.env.TELEGRAM_GROUP_ID
-  if (!groupId || signals.length === 0) return
+  const filtered = signals.filter(s => s.confidence >= 0.70)
+  if (!groupId || filtered.length === 0) return
 
-  const lines = signals.map(s => {
+  const lines = filtered.map(s => {
     const emoji = s.direction === 'long' ? '📈' : '📉'
     const pct = Math.round(s.confidence * 100)
     return `${emoji} <b>${s.symbol}</b> — ${s.direction.toUpperCase()} ${confidenceStars(s.confidence)} ${pct}%` +

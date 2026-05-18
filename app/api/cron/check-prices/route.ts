@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
           .update({ status: 'tp_hit', tp_hit_at: new Date().toISOString() })
           .eq('id', signal.id)
 
-        if (groupId) await sendMessage(groupId, formatTPHit(signal))
+        if (groupId && signal.confidence >= 0.70) await sendMessage(groupId, formatTPHit(signal))
         hits++
       } else if (slHit) {
         const { slPnl } = calcPnl(signal, accountBalance)
@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
           .update({ status: 'sl_hit', sl_hit_at: new Date().toISOString() })
           .eq('id', signal.id)
 
-        if (groupId) await sendMessage(groupId, formatSLHit(signal))
+        if (groupId && signal.confidence >= 0.70) await sendMessage(groupId, formatSLHit(signal))
         hits++
       }
     }
