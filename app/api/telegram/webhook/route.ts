@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { sendMessage } from '@/lib/telegram'
 import { supabase } from '@/lib/supabase'
 import { Signal } from '@/types'
-import { getInstantSignals } from '@/app/api/instant/route'
+import { getInstantSignals } from '@/lib/instant'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
