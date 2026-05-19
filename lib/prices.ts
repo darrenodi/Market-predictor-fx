@@ -218,23 +218,12 @@ export function computeIndicators(
 // ─── Fetch functions ────────────────────────────────────────────────────────
 
 async function binanceFetch(url: string, revalidate?: number): Promise<unknown> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 10_000) // 10-second hard timeout
-  try {
-    const opts: RequestInit = {
-      signal: controller.signal,
-      ...(revalidate !== undefined ? { next: { revalidate } } : { cache: 'no-store' }),
-    }
-    const res = await fetch(url, opts)
-    if (!res.ok) throw new Error(`Binance fetch failed ${res.status}: ${url}`)
-    const data = await res.json()
-    return data
-  } catch (error) {
-    console.error(`[binanceFetch] Error fetching ${url}:`, error instanceof Error ? error.message : String(error))
-    throw error
-  } finally {
-    clearTimeout(timer)
-  }
+  const opts: RequestInit = revalidate !== undefined
+    ? { next: { revalidate } }
+    : { cache: 'no-store' }
+  const res = await fetch(url, opts)
+  if (!res.ok) throw new Error(`Binance fetch failed ${res.status}: ${url}`)
+  return res.json()
 }
 
 // Current prices + 24 h change for multiple symbols in one request

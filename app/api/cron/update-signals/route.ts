@@ -16,96 +16,93 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 // 08:00–09:00 UTC — London open stop-hunt hour.
-// Institutions spike price to hunt retail stops before the real move.
-// Skip signal generation entirely; let price commit to a direction first.
 function isLondonOpenHour(): boolean {
   const h = new Date().getUTCHours()
   return h === 8
 }
 
-async function runSignalUpdate(memeCoin: string) {
+async function fetchMarketData(memeCoin: string) {
   const symbols = ['BTC', 'ETH', 'XAU', memeCoin]
-  const t0 = Date.now()
-  console.log(`[update-signals] start — symbols: ${symbols.join(', ')}`)
 
-  try {
-    const [prices, news, whaleAlerts, { data: activeSignals }, performance, ...histories] = await Promise.all([
-      fetchAllPrices(memeCoin),
-      fetchAllNews(symbols),
-      fetchWhaleAlerts(),
-      supabaseAdmin.from('signals').select('*').eq('status', 'active'),
-      fetchPerformanceSummary(),
-      ...symbols.map(s => fetchPriceHistory(s)),
-      ...symbols.map(s => fetchWeeklyHistory(s)),
-      ...symbols.map(s => fetchFundingRate(s)),
-      ...symbols.map(s => fetchOrderBookWalls(s)),
-      ...symbols.map(s => fetchMarketSentiment(s)),
-    ])
-    console.log(`[update-signals] data fetched in ${Date.now() - t0}ms`)
-    console.log(`[update-signals] prices:`, prices)
+  const [prices, news, whaleAlerts, { data: activeSignals }, performance, ...histories] = await Promise.all([
+    fetchAllPrices(memeCoin),
+    fetchAllNews(symbols),
+    fetchWhaleAlerts(),
+    supabaseAdmin.from('signals').select('*').eq('status', 'active'),
+    fetchPerformanceSummary(),
+    ...symbols.map(s => fetchPriceHistory(s)),
+    ...symbols.map(s => fetchWeeklyHistory(s)),
+    ...symbols.map(s => fetchFundingRate(s)),
+    ...symbols.map(s => fetchOrderBookWalls(s)),
+    ...symbols.map(s => fetchMarketSentiment(s)),
+  ])
 
-    const n = symbols.length
-    const priceHistories  = histories.slice(0,     n) as Candle[][]
-    const weeklyHistories = histories.slice(n,     n * 2) as Candle[][]
-    const fundingRates    = histories.slice(n * 2, n * 3) as (number | null)[]
-    const orderBooks      = histories.slice(n * 3, n * 4) as (Awaited<ReturnType<typeof fetchOrderBookWalls>>)[]
-    const sentiments      = histories.slice(n * 4, n * 5) as (Awaited<ReturnType<typeof fetchMarketSentiment>>)[]
+  const n = symbols.length
+  const priceHistories  = histories.slice(0,     n) as Candle[][]
+  const weeklyHistories = histories.slice(n,     n * 2) as Candle[][]
+  const fundingRates    = histories.slice(n * 2, n * 3) as (number | null)[]
+  const orderBooks      = histories.slice(n * 3, n * 4) as (Awaited<ReturnType<typeof fetchOrderBookWalls>>)[]
+  const sentiments      = histories.slice(n * 4, n * 5) as (Awaited<ReturnType<typeof fetchMarketSentiment>>)[]
 
-    const marketData = symbols
-      .map((s, i) => {
-        const sym = s === 'XAU' ? 'XAU/USD' : `${s}/USD`
-        const existing = (activeSignals ?? []).find(sig => sig.symbol === sym)
-        const price = prices[s]?.price ?? 0
-        const candles = priceHistories[i] ?? []
-        const weeklyCandles = weeklyHistories[i] ?? []
-        const fundingRate = fundingRates[i] ?? null
-        return {
-          symbol: sym,
-          price,
-          change_24h: prices[s]?.change_24h ?? 0,
-          news: news[s] ?? [],
-          whales: whaleAlerts.filter(w => w.symbol === s),
-          indicators: computeIndicators(candles, price, weeklyCandles, fundingRate),
-          orderBook: orderBooks[i] ?? null,
-          sentiment: sentiments[i] ?? null,
-          currentSignal: existing ? {
-            direction: existing.direction,
-            entry: existing.market_price,
-            tp: existing.tp,
-            sl: existing.sl,
-            confidence: existing.confidence,
-            ageMinutes: Math.floor((Date.now() - new Date(existing.created_at).getTime()) / 60000),
-          } : null,
-        }
-      })
-      .filter(d => d.price > 0)
+  const marketData = symbols
+    .map((s, i) => {
+      const sym = s === 'XAU' ? 'XAU/USD' : `${s}/USD`
+      const existing = (activeSignals ?? []).find(sig => sig.symbol === sym)
+      const price = prices[s]?.price ?? 0
+      const candles = priceHistories[i] ?? []
+      const weeklyCandles = weeklyHistories[i] ?? []
+      const fundingRate = fundingRates[i] ?? null
+      return {
+        symbol: sym,
+        price,
+        change_24h: prices[s]?.change_24h ?? 0,
+        news: news[s] ?? [],
+        whales: whaleAlerts.filter(w => w.symbol === s),
+        indicators: computeIndicators(candles, price, weeklyCandles, fundingRate),
+        orderBook: orderBooks[i] ?? null,
+        sentiment: sentiments[i] ?? null,
+        currentSignal: existing ? {
+          direction: existing.direction,
+          entry: existing.market_price,
+          tp: existing.tp,
+          sl: existing.sl,
+          confidence: existing.confidence,
+          ageMinutes: Math.floor((Date.now() - new Date(existing.created_at).getTime()) / 60000),
+        } : null,
+      }
+    })
+    .filter(d => d.price > 0)
 
-    if (marketData.length === 0) {
-      console.warn('[update-signals] No valid market data — all prices returned 0')
-      console.warn('[update-signals] Symbols attempted:', symbols)
-      return
-    }
-    console.log(`[update-signals] assets with price: ${marketData.map(d => d.symbol).join(', ')}`)
-
-    const signals = await generateSignals(marketData, performance ?? undefined)
-    console.log(`[update-signals] Gemini returned ${signals.length} signals in ${Date.now() - t0}ms`)
-
-    const cutoff = new Date(Date.now() - 28 * 60 * 1000).toISOString()
-    await supabaseAdmin.from('signals').update({ status: 'expired' })
-      .eq('status', 'active')
-      .lt('created_at', cutoff)
-
-    await supabaseAdmin.from('price_history').insert(
-      Object.entries(prices).map(([sym, d]) => ({
-        symbol: sym === 'XAU' ? 'XAU/USD' : `${sym}/USD`,
-        price: d.price,
-      })),
-    )
-  } catch (error) {
-    console.error('[update-signals] Fatal error:', error instanceof Error ? error.message : String(error))
-    throw error
-  }
+  return { prices, marketData, performance }
 }
+
+async function runSignalUpdate(memeCoin: string) {
+  const t0 = Date.now()
+  console.log(`[update-signals] start — symbols: BTC, ETH, XAU, ${memeCoin}`)
+
+  const { prices, marketData, performance } = await fetchMarketData(memeCoin)
+  console.log(`[update-signals] data fetched in ${Date.now() - t0}ms — prices: ${JSON.stringify(Object.fromEntries(Object.entries(prices).map(([k, v]) => [k, v.price])))}`)
+
+  if (marketData.length === 0) {
+    console.warn('[update-signals] No valid market data — all prices returned 0')
+    return
+  }
+  console.log(`[update-signals] assets: ${marketData.map(d => d.symbol).join(', ')}`)
+
+  const signals = await generateSignals(marketData, performance ?? undefined)
+  console.log(`[update-signals] Gemini returned ${signals.length} signals in ${Date.now() - t0}ms`)
+
+  const cutoff = new Date(Date.now() - 28 * 60 * 1000).toISOString()
+  await supabaseAdmin.from('signals').update({ status: 'expired' })
+    .eq('status', 'active')
+    .lt('created_at', cutoff)
+
+  await supabaseAdmin.from('price_history').insert(
+    Object.entries(prices).map(([sym, d]) => ({
+      symbol: sym === 'XAU' ? 'XAU/USD' : `${sym}/USD`,
+      price: d.price,
+    })),
+  )
 
   for (const sig of signals) {
     await supabaseAdmin.from('signals').insert({ ...sig, status: 'active' })
@@ -129,40 +126,12 @@ export async function GET(req: NextRequest) {
   const cfg = Object.fromEntries((config ?? []).map(r => [r.key, r.value]))
   const memeCoin: string = cfg.meme_coin ?? 'DOGE'
 
-  // ?debug=1 — fetch market data and call Gemini but don't insert to DB
-  // Returns raw Gemini response + indicator state for every asset
+  // ?debug=1 — calls Gemini but does NOT insert to DB; returns raw response + indicator state
   if (req.nextUrl.searchParams.get('debug') === '1') {
-    const symbols = ['BTC', 'ETH', 'XAU', memeCoin]
-    const [prices, , , , performance, ...histories] = await Promise.all([
-      fetchAllPrices(memeCoin),
-      fetchAllNews(symbols),
-      fetchWhaleAlerts(),
-      supabaseAdmin.from('signals').select('*').eq('status', 'active'),
-      fetchPerformanceSummary(),
-      ...symbols.map(s => fetchPriceHistory(s)),
-      ...symbols.map(s => fetchWeeklyHistory(s)),
-      ...symbols.map(s => fetchFundingRate(s)),
-      ...symbols.map(s => fetchOrderBookWalls(s)),
-      ...symbols.map(s => fetchMarketSentiment(s)),
-    ])
-    const n = symbols.length
-    const priceHistories  = histories.slice(0, n) as Candle[][]
-    const weeklyHistories = histories.slice(n, n * 2) as Candle[][]
-    const fundingRates    = histories.slice(n * 2, n * 3) as (number | null)[]
-    const orderBooks      = histories.slice(n * 3, n * 4) as (Awaited<ReturnType<typeof fetchOrderBookWalls>>)[]
-    const sentiments      = histories.slice(n * 4, n * 5) as (Awaited<ReturnType<typeof fetchMarketSentiment>>)[]
-    const marketData = symbols.map((s, i) => ({
-      symbol: s === 'XAU' ? 'XAU/USD' : `${s}/USD`,
-      price: prices[s]?.price ?? 0,
-      change_24h: prices[s]?.change_24h ?? 0,
-      news: [], whales: [], currentSignal: null,
-      indicators: computeIndicators(priceHistories[i] ?? [], prices[s]?.price ?? 0, weeklyHistories[i] ?? [], fundingRates[i] ?? null),
-      orderBook: orderBooks[i] ?? null,
-      sentiment: sentiments[i] ?? null,
-    })).filter(d => d.price > 0)
     try {
-      const debug = await generateSignalsDebug(marketData, performance ?? undefined)
-      return NextResponse.json(debug)
+      const { marketData, performance } = await fetchMarketData(memeCoin)
+      const result = await generateSignalsDebug(marketData, performance ?? undefined)
+      return NextResponse.json(result)
     } catch (err) {
       return NextResponse.json({ error: String(err) }, { status: 500 })
     }
