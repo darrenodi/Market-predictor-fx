@@ -227,7 +227,11 @@ async function binanceFetch(url: string, revalidate?: number): Promise<unknown> 
     }
     const res = await fetch(url, opts)
     if (!res.ok) throw new Error(`Binance fetch failed ${res.status}: ${url}`)
-    return res.json()
+    const data = await res.json()
+    return data
+  } catch (error) {
+    console.error(`[binanceFetch] Error fetching ${url}:`, error instanceof Error ? error.message : String(error))
+    throw error
   } finally {
     clearTimeout(timer)
   }
@@ -241,22 +245,32 @@ export async function fetchCurrentPrices(symbols: string[]): Promise<PriceMap> {
   const param = encodeURIComponent(JSON.stringify(binSyms))
   const url = `${BINANCE_SPOT}/api/v3/ticker/24hr?symbols=${param}`
   try {
+    console.log(`[fetchCurrentPrices] Fetching for symbols:`, symbols, '→', binSyms)
     const data = await binanceFetch(url) as Array<{
       symbol: string; lastPrice: string; priceChangePercent: string
     }>
+    console.log(`[fetchCurrentPrices] Raw response data:`, JSON.stringify(data).slice(0, 200))
     const result: PriceMap = {}
     for (const sym of symbols) {
       const binSym = BINANCE_SYMBOL[sym]
       if (!binSym) continue
       const ticker = data.find(d => d.symbol === binSym)
-      if (!ticker) continue
+      if (!ticker) {
+        console.warn(`[fetchCurrentPrices] No ticker found for ${sym} (${binSym})`)
+        continue
+      }
+      const price = parseFloat(ticker.lastPrice)
+      const change = parseFloat(ticker.priceChangePercent)
+      console.log(`[fetchCurrentPrices] ${sym}: price=${price}, change=${change}`)
       result[sym] = {
-        price:     parseFloat(ticker.lastPrice),
-        change_24h: parseFloat(ticker.priceChangePercent),
+        price,
+        change_24h: change,
       }
     }
+    console.log(`[fetchCurrentPrices] Final result:`, result)
     return result
-  } catch {
+  } catch (error) {
+    console.error(`[fetchCurrentPrices] Error:`, error instanceof Error ? error.message : String(error))
     return {}
   }
 }
