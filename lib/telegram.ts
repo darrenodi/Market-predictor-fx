@@ -4,13 +4,26 @@ import { GeneratedSignal } from './signals'
 const BASE = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`
 
 export async function sendMessage(chatId: string, text: string): Promise<void> {
-  if (!process.env.TELEGRAM_BOT_TOKEN) return
+  if (!process.env.TELEGRAM_BOT_TOKEN) {
+    console.warn('[telegram] sendMessage skipped — TELEGRAM_BOT_TOKEN not set')
+    return
+  }
+  if (!chatId) {
+    console.warn('[telegram] sendMessage skipped — chatId is empty')
+    return
+  }
 
-  await fetch(`${BASE()}/sendMessage`, {
+  const res = await fetch(`${BASE()}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
   })
+  if (!res.ok) {
+    const body = await res.text()
+    console.error(`[telegram] sendMessage failed ${res.status}: ${body}`)
+  } else {
+    console.log(`[telegram] sendMessage OK → chat ${chatId}`)
+  }
 }
 
 export async function setWebhook(webhookUrl: string): Promise<void> {
@@ -101,6 +114,7 @@ Loss: -${pct.toFixed(2)}% (-${lev.toFixed(1)}% with ${s.leverage}x)
 export async function notifyNewSignals(signals: GeneratedSignal[]): Promise<void> {
   const groupId = process.env.TELEGRAM_GROUP_ID
   const filtered = signals.filter(s => s.confidence >= 0.70)
+  console.log(`[telegram] notifyNewSignals — ${signals.length} total, ${filtered.length} ≥70% → groupId=${groupId ? groupId : 'NOT SET'}`)
   if (!groupId || filtered.length === 0) return
 
   const lines = filtered.map(s => {
