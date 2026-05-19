@@ -26,6 +26,8 @@ function isLondonOpenHour(): boolean {
 
 async function runSignalUpdate(memeCoin: string) {
   const symbols = ['BTC', 'ETH', 'XAU', memeCoin]
+  const t0 = Date.now()
+  console.log(`[update-signals] start — symbols: ${symbols.join(', ')}`)
 
   const [prices, news, whaleAlerts, { data: activeSignals }, performance, ...histories] = await Promise.all([
     fetchAllPrices(memeCoin),
@@ -39,6 +41,7 @@ async function runSignalUpdate(memeCoin: string) {
     ...symbols.map(s => fetchOrderBookWalls(s)),
     ...symbols.map(s => fetchMarketSentiment(s)),
   ])
+  console.log(`[update-signals] data fetched in ${Date.now() - t0}ms`)
 
   const n = symbols.length
   const priceHistories  = histories.slice(0,     n) as Candle[][]
@@ -76,9 +79,14 @@ async function runSignalUpdate(memeCoin: string) {
     })
     .filter(d => d.price > 0)
 
-  if (marketData.length === 0) return
+  if (marketData.length === 0) {
+    console.warn('[update-signals] No valid market data — all prices returned 0')
+    return
+  }
+  console.log(`[update-signals] assets with price: ${marketData.map(d => d.symbol).join(', ')}`)
 
   const signals = await generateSignals(marketData, performance ?? undefined)
+  console.log(`[update-signals] Gemini returned ${signals.length} signals in ${Date.now() - t0}ms`)
 
   const cutoff = new Date(Date.now() - 28 * 60 * 1000).toISOString()
   await supabaseAdmin.from('signals').update({ status: 'expired' })
@@ -97,7 +105,7 @@ async function runSignalUpdate(memeCoin: string) {
   }
   await notifyNewSignals(signals)
 
-  console.log(`[update-signals] Generated ${signals.length} signals`)
+  console.log(`[update-signals] done — ${signals.length} signals inserted, total ${Date.now() - t0}ms`)
 }
 
 export async function GET(req: NextRequest) {
