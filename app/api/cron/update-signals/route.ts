@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, fetchFundingRate, fetchOrderBookWalls, fetchMarketSentiment, computeIndicators, Candle } from '@/lib/prices'
 import { fetchAllNews, fetchWhaleAlerts } from '@/lib/news'
-import { generateSignals } from '@/lib/signals'
+import { generateSignals, generateSignalsDebug } from '@/lib/signals'
 import { fetchPerformanceSummary } from '@/lib/performance'
 import { notifyNewSignals } from '@/lib/telegram'
 
@@ -120,6 +120,45 @@ export async function GET(req: NextRequest) {
   const { data: config } = await supabaseAdmin.from('config').select('key, value')
   const cfg = Object.fromEntries((config ?? []).map(r => [r.key, r.value]))
   const memeCoin: string = cfg.meme_coin ?? 'DOGE'
+
+  // ?debug=1 — fetch market data and call Gemini but don't insert to DB
+  // Returns raw Gemini response + indicator state for every asset
+  if (req.nextUrl.searchParams.get('debug') === '1') {
+    const symbols = ['BTC', 'ETH', 'XAU', memeCoin]
+    const [prices, , , , performance, ...histories] = await Promise.all([
+      fetchAllPrices(memeCoin),
+      fetchAllNews(symbols),
+      fetchWhaleAlerts(),
+      supabaseAdmin.from('signals').select('*').eq('status', 'active'),
+      fetchPerformanceSummary(),
+      ...symbols.map(s => fetchPriceHistory(s)),
+      ...symbols.map(s => fetchWeeklyHistory(s)),
+      ...symbols.map(s => fetchFundingRate(s)),
+      ...symbols.map(s => fetchOrderBookWalls(s)),
+      ...symbols.map(s => fetchMarketSentiment(s)),
+    ])
+    const n = symbols.length
+    const priceHistories  = histories.slice(0, n) as Candle[][]
+    const weeklyHistories = histories.slice(n, n * 2) as Candle[][]
+    const fundingRates    = histories.slice(n * 2, n * 3) as (number | null)[]
+    const orderBooks      = histories.slice(n * 3, n * 4) as (Awaited<ReturnType<typeof fetchOrderBookWalls>>)[]
+    const sentiments      = histories.slice(n * 4, n * 5) as (Awaited<ReturnType<typeof fetchMarketSentiment>>)[]
+    const marketData = symbols.map((s, i) => ({
+      symbol: s === 'XAU' ? 'XAU/USD' : `${s}/USD`,
+      price: prices[s]?.price ?? 0,
+      change_24h: prices[s]?.change_24h ?? 0,
+      news: [], whales: [], currentSignal: null,
+      indicators: computeIndicators(priceHistories[i] ?? [], prices[s]?.price ?? 0, weeklyHistories[i] ?? [], fundingRates[i] ?? null),
+      orderBook: orderBooks[i] ?? null,
+      sentiment: sentiments[i] ?? null,
+    })).filter(d => d.price > 0)
+    try {
+      const debug = await generateSignalsDebug(marketData, performance ?? undefined)
+      return NextResponse.json(debug)
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 })
+    }
+  }
 
   try {
     await runSignalUpdate(memeCoin)

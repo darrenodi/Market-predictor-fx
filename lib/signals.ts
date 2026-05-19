@@ -341,6 +341,34 @@ function isRateLimitError(err: unknown): boolean {
          msg.includes('resource exhausted') || msg.includes('too many requests')
 }
 
+export async function generateSignalsDebug(assets: MarketData[], performance?: PerformanceSummary): Promise<{
+  modelUsed: string
+  rawResponse: string
+  parsed: GeneratedSignal[]
+  indicators: Array<{ symbol: string; momentum30m: number; momentum1h: number; isChoppy: boolean; priceStructure: string; biasScore: number; biasDirection: string }>
+}> {
+  const prompt = buildPrompt(assets, performance)
+  for (const modelId of MODELS) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelId })
+      const result = await model.generateContent(prompt)
+      const text = result.response.text()
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      const parsed = jsonMatch ? (JSON.parse(jsonMatch[0]) as { signals: GeneratedSignal[] }).signals : []
+      const indicators = assets.map(a => {
+        const ind = a.indicators
+        if (!ind) return { symbol: a.symbol, momentum30m: 0, momentum1h: 0, isChoppy: false, priceStructure: 'none', biasScore: 0, biasDirection: 'NEUTRAL' }
+        const bias = computeBias(ind, a.price)
+        return { symbol: a.symbol, momentum30m: ind.momentum30m, momentum1h: ind.momentum1h, isChoppy: bias.isChoppy, priceStructure: ind.priceStructure, biasScore: bias.biasScore, biasDirection: bias.biasDirection }
+      })
+      return { modelUsed: modelId, rawResponse: text.slice(0, 3000), parsed, indicators }
+    } catch (err) {
+      console.warn(`[signals-debug] ${modelId} failed: ${err}`)
+    }
+  }
+  throw new Error('All models failed')
+}
+
 export async function generateSignals(assets: MarketData[], performance?: PerformanceSummary): Promise<GeneratedSignal[]> {
   const prompt = buildPrompt(assets, performance)
   let lastError: unknown
