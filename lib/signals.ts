@@ -41,6 +41,7 @@ function computeBias(ind: TechnicalIndicators, price: number): {
   biasReasons: string[]
   blockLong: string | null
   blockShort: string | null
+  isChoppy: boolean   // true when momentum timeframes conflict or price is ranging
 } {
   const reasons: string[] = []
   let bullSignals = 0, bearSignals = 0
@@ -60,6 +61,19 @@ function computeBias(ind: TechnicalIndicators, price: number): {
   else if (ind.momentum30m < -0.05 && ind.momentum1h < 0) { bearSignals++; reasons.push(`Momentum bearish: 30m ${pct(ind.momentum30m)}, 1h ${pct(ind.momentum1h)}`) }
   else reasons.push(`Momentum mixed: 30m ${pct(ind.momentum30m)}, 1h ${pct(ind.momentum1h)}`)
 
+  // Detect choppy conditions: momentum timeframes pointing in opposite directions
+  const m30sign = ind.momentum30m > 0.05 ? 1 : ind.momentum30m < -0.05 ? -1 : 0
+  const m1hSign = ind.momentum1h > 0.1 ? 1 : ind.momentum1h < -0.1 ? -1 : 0
+  const momentumConflict = m30sign !== 0 && m1hSign !== 0 && m30sign !== m1hSign
+  if (momentumConflict) {
+    reasons.push(`⚠ CONFLICTING MOMENTUM: 30m ${pct(ind.momentum30m)} vs 1h ${pct(ind.momentum1h)} — price oscillating, no sustainable edge`)
+  }
+
+  const isRanging = (ind.priceStructure as string) === 'ranging'
+  if (isRanging) {
+    reasons.push('Ranging 24h structure — sideways price action, high chop risk')
+  }
+
   // Price vs nearest level
   const distToRes = ((ind.nearestResistance - price) / price) * 100
   const distToSup = ((price - ind.nearestSupport) / price) * 100
@@ -68,12 +82,13 @@ function computeBias(ind: TechnicalIndicators, price: number): {
 
   const biasScore = Math.max(bullSignals, bearSignals)
   const biasDirection = bullSignals > bearSignals ? 'LONG' : bearSignals > bullSignals ? 'SHORT' : 'NEUTRAL'
+  const isChoppy = momentumConflict || isRanging
 
   // Hard blocks — only at extreme RSI, not just overbought/oversold zone
   const blockLong = ind.rsi >= 75 ? `RSI ${ind.rsi.toFixed(0)} is EXTREME OVERBOUGHT (≥75) — avoid long, consider short` : null
   const blockShort = ind.rsi <= 25 ? `RSI ${ind.rsi.toFixed(0)} is EXTREME OVERSOLD (≤25) — avoid short, consider long` : null
 
-  return { biasDirection, biasScore, biasReasons: reasons, blockLong, blockShort }
+  return { biasDirection, biasScore, biasReasons: reasons, blockLong, blockShort, isChoppy }
 }
 
 function getSession(): { name: string; quality: string; note: string } {
@@ -154,6 +169,7 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
       if (bias.blockLong)   slTpGuide += `\n  ⛔ RSI BLOCK: ${bias.blockLong}`
       if (bias.blockShort)  slTpGuide += `\n  ⛔ RSI BLOCK: ${bias.blockShort}`
       if (bias.biasScore < 2) slTpGuide += `\n  ⚠ VERY WEAK SETUP (${bias.biasScore}/4) — skip unless strong news catalyst`
+      if (bias.isChoppy) slTpGuide += `\n  🚫 CHOPPY MARKET DETECTED: 30m and 1h momentum conflict OR price is ranging. Price is oscillating — picking a direction here means guessing. Set confidence=0.0 and skip. Only override if there is a clear, strong news catalyst that resolves direction.`
     }
 
     if (a.currentSignal) {
@@ -204,12 +220,17 @@ ${assetBlocks}
 
 ━━━ SIGNAL GENERATION ━━━
 
-DIRECTION — work through in order, most weight first:
+SKIP FIRST — before picking direction, check these:
+  🚫 If asset block shows "CHOPPY MARKET DETECTED" → confidence=0.0. No exceptions unless a major news event clearly resolves direction. Choppy markets eat SL hits.
+  🚫 If biasScore < 2 AND session is LOW/DANGER AND no strong news → confidence=0.0.
+  🚫 If weekly bias and 24h structure disagree AND 30m/1h momentum also conflict → no edge exists. confidence=0.0.
+
+DIRECTION — only proceed if above skip rules don't apply, then work in order:
   1. Weekly bias + 24h structure: strongest signal. If both agree → that is your direction.
   2. EMA stack (8/21/50): bullish stack (8>21>50) → long; bearish (8<21<50) → short.
   3. RSI(14): ≥70 overbought → short pressure; ≤30 oversold → long pressure.
-  4. Momentum: 30m + 1h aligned → confirms. Opposing → reduce confidence.
-  5. Session: HIGH/PEAK → trust momentum breakouts. LOW → fade extremes, tighten size.
+  4. Momentum: 30m + 1h aligned → confirms. Opposing → means choppy, skip or reduce confidence.
+  5. Session: HIGH/PEAK → trust momentum breakouts. LOW → fade extremes, tighten size. During LOW session, require 3+/4 signals or skip.
   6. News/whales: strong catalyst overrides weak TA. No catalyst → pure technicals.
 
 TP/SL:
