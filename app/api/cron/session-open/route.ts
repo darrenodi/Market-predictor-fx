@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, computeIndicators } from '@/lib/prices'
+import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, computeIndicators, Candle } from '@/lib/prices'
 import { generateDailyPredictions, SESSIONS, SessionKey } from '@/lib/daily-sessions'
 import { sendMessage } from '@/lib/telegram'
 
@@ -54,22 +54,22 @@ export async function GET(req: NextRequest) {
       ...symbols.map(s => fetchWeeklyHistory(s)),
     ])
 
-    const priceHistories = histories.slice(0, symbols.length) as Awaited<ReturnType<typeof fetchPriceHistory>>[]
-    const weeklyHistories = histories.slice(symbols.length) as number[][]
+    const priceHistories = histories.slice(0, symbols.length) as Candle[][]
+    const weeklyHistories = histories.slice(symbols.length) as Candle[][]
 
     const assets = symbols
       .map((s, i) => {
         const sym = s === 'XAU' ? 'XAU/USD' : `${s}/USD`
         const price = (prices as Awaited<ReturnType<typeof fetchAllPrices>>)[s]?.price ?? 0
         if (price === 0) return null
-        const { prices: ph, volumes: vh } = priceHistories[i] ?? { prices: [], volumes: [] }
-        const wp = weeklyHistories[i] ?? []
+        const candles = priceHistories[i] ?? []
+        const weeklyCandles = weeklyHistories[i] ?? []
         return {
           symbol: sym,
           price,
           change_24h: (prices as Awaited<ReturnType<typeof fetchAllPrices>>)[s]?.change_24h ?? 0,
-          indicators: computeIndicators(ph, vh, price, wp),
-          priceHistory: ph,
+          indicators: computeIndicators(candles, price, weeklyCandles),
+          priceHistory: candles.map((c: Candle) => c.close),  // close prices for daily-sessions trajectory
         }
       })
       .filter((a): a is NonNullable<typeof a> => a !== null)

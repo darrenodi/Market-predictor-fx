@@ -128,6 +128,18 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
       const structureEmoji = ind.priceStructure === 'uptrend' ? '📈' : ind.priceStructure === 'downtrend' ? '📉' : '↔'
       const weeklyEmoji   = ind.weeklyBias === 'bullish' ? '🟢' : ind.weeklyBias === 'bearish' ? '🔴' : '⚪'
 
+      const fundingLine = (() => {
+        if (ind.fundingRate === null) return 'n/a'
+        const r = ind.fundingRate
+        const pct = (r * 100).toFixed(4)
+        const sign = r >= 0 ? '+' : ''
+        const interp = r > 0.0003  ? 'elevated longs — market overextended bullish, bearish pressure building' :
+                       r < -0.0003 ? 'elevated shorts — market overextended bearish, bullish pressure building' :
+                       r > 0       ? 'slight long bias — neutral' :
+                       r < 0       ? 'slight short bias — neutral' : 'neutral'
+        return `${sign}${pct}% per 8h (${interp})`
+      })()
+
       techSection = `  TECHNICAL SUMMARY:
     Weekly bias: ${weeklyEmoji} ${ind.weeklyBias.toUpperCase()} (7-day direction)
     24h structure: ${structureEmoji} ${ind.priceStructure.toUpperCase()} (12h price action: HH/HL or LH/LL)
@@ -136,11 +148,12 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
       ${bias.biasReasons.map(r => `• ${r}`).join('\n      ')}
     EMA        : EMA8=${plain(ind.ema8)} | EMA21=${plain(ind.ema21)} | EMA50=${plain(ind.ema50)} → ${ind.emaTrend.toUpperCase()}
     RSI(14)    : ${ind.rsi.toFixed(1)} [${ind.rsiZone.toUpperCase()}]
+    Funding    : ${fundingLine}
     Volume     : ${vol}
     24h Range  : ${plain(ind.low24h)} — ${plain(ind.high24h)}
     Resistance : ${ind.resistances.map(plain).join(' | ') || 'none found'} ${ind.nearestResistance ? `(nearest: ${plain(ind.nearestResistance)}, ${(((ind.nearestResistance - a.price) / a.price) * 100).toFixed(3)}% away)` : ''}
     Support    : ${ind.supports.map(plain).join(' | ') || 'none found'} ${ind.nearestSupport ? `(nearest: ${plain(ind.nearestSupport)}, ${(((a.price - ind.nearestSupport) / a.price) * 100).toFixed(3)}% away)` : ''}
-    ATR(5-min) : ${plain(ind.atr)} (${ind.atrPct.toFixed(4)}% per 5 min)`
+    ATR(5-min) : ${plain(ind.atr)} (${ind.atrPct.toFixed(4)}% per 5 min — Binance true range)`
 
       const atr = ind.atr
       const tpDist = Math.max(a.price * 0.0015, atr * 1.5)   // TP = 0.15% — hits easily in 30 min

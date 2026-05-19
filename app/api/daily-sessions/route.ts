@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase'
-import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, fetchPricesAtTime, computeIndicators } from '@/lib/prices'
+import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, fetchPricesAtTime, computeIndicators, Candle } from '@/lib/prices'
 import { generateDailyPredictions, SESSIONS, SessionKey } from '@/lib/daily-sessions'
 
 export const dynamic = 'force-dynamic'
@@ -125,22 +125,21 @@ async function autoGenerate(session: SessionKey, memeCoin: string, dailyBalance:
   // Fall back to current prices for any symbol that had no historical data
   const currentPrices = await fetchAllPrices(memeCoin)
 
-  const priceHistories = histories.slice(0, symbols.length) as Awaited<ReturnType<typeof fetchPriceHistory>>[]
-  const weeklyHistories = histories.slice(symbols.length) as number[][]
+  const priceHistories = histories.slice(0, symbols.length) as Candle[][]
+  const weeklyHistories = histories.slice(symbols.length) as Candle[][]
 
   const assets = symbols.map((s, i) => {
     const sym = s === 'XAU' ? 'XAU/USD' : `${s}/USD`
-    // Use historical open price; fall back to current if unavailable
     const price = historicalPrices[s] ?? currentPrices[s]?.price ?? 0
     if (price === 0) return null
-    const { prices: ph, volumes: vh } = priceHistories[i] ?? { prices: [], volumes: [] }
-    const wp = weeklyHistories[i] ?? []
+    const candles = priceHistories[i] ?? []
+    const weeklyCandles = weeklyHistories[i] ?? []
     return {
       symbol: sym,
       price,
       change_24h: currentPrices[s]?.change_24h ?? 0,
-      indicators: computeIndicators(ph, vh, price, wp),
-      priceHistory: ph,
+      indicators: computeIndicators(candles, price, weeklyCandles),
+      priceHistory: candles.map((c: Candle) => c.close),
     }
   }).filter((a): a is NonNullable<typeof a> => a !== null)
 

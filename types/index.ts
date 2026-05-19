@@ -64,6 +64,7 @@ export interface TechnicalIndicators {
   suggestedSlShort: number
   priceStructure: 'uptrend' | 'downtrend' | 'sideways'
   weeklyBias: 'bullish' | 'bearish' | 'neutral'
+  fundingRate: number | null
   sma4h: number
   priceVsSma: number
   momentum4h: number

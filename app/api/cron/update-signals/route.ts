@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { after } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, computeIndicators } from '@/lib/prices'
+import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, fetchFundingRate, computeIndicators, Candle } from '@/lib/prices'
 import { fetchAllNews, fetchWhaleAlerts } from '@/lib/news'
 import { generateSignals } from '@/lib/signals'
 import { fetchPerformanceSummary } from '@/lib/performance'
@@ -35,25 +35,28 @@ async function runSignalUpdate(memeCoin: string) {
     fetchPerformanceSummary(),
     ...symbols.map(s => fetchPriceHistory(s)),
     ...symbols.map(s => fetchWeeklyHistory(s)),
+    ...symbols.map(s => fetchFundingRate(s)),
   ])
 
-  const priceHistories = histories.slice(0, symbols.length)
-  const weeklyHistories = histories.slice(symbols.length)
+  const priceHistories = histories.slice(0, symbols.length) as Candle[][]
+  const weeklyHistories = histories.slice(symbols.length, symbols.length * 2) as Candle[][]
+  const fundingRates = histories.slice(symbols.length * 2) as (number | null)[]
 
   const marketData = symbols
     .map((s, i) => {
       const sym = s === 'XAU' ? 'XAU/USD' : `${s}/USD`
       const existing = (activeSignals ?? []).find(sig => sig.symbol === sym)
       const price = prices[s]?.price ?? 0
-      const { prices: ph, volumes: vh } = (priceHistories[i] as { prices: number[], volumes: number[] }) ?? { prices: [], volumes: [] }
-      const wp = (weeklyHistories[i] as number[]) ?? []
+      const candles = priceHistories[i] ?? []
+      const weeklyCandles = weeklyHistories[i] ?? []
+      const fundingRate = fundingRates[i] ?? null
       return {
         symbol: sym,
         price,
         change_24h: prices[s]?.change_24h ?? 0,
         news: news[s] ?? [],
         whales: whaleAlerts.filter(w => w.symbol === s),
-        indicators: computeIndicators(ph, vh, price, wp),
+        indicators: computeIndicators(candles, price, weeklyCandles, fundingRate),
         currentSignal: existing ? {
           direction: existing.direction,
           entry: existing.market_price,
