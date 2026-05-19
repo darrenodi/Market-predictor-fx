@@ -359,6 +359,85 @@ export async function fetchPriceAtTime(symbol: string, utcTimestamp: number): Pr
   }
 }
 
+// ─── Order book walls ──────────────────────────────────────────────────────
+
+export interface OrderBookWall {
+  price: number
+  notionalUsd: number  // price × qty — indicates wall strength
+}
+
+export interface OrderBookData {
+  bidWalls: OrderBookWall[]  // large buy orders below price = support zones
+  askWalls: OrderBookWall[]  // large sell orders above price = resistance zones
+}
+
+// Fetch top 100 bid/ask levels, find the 3 largest notional clusters on each side
+export async function fetchOrderBookWalls(symbol: string): Promise<OrderBookData | null> {
+  const binSym = BINANCE_SYMBOL[symbol]
+  if (!binSym) return null
+  try {
+    const data = await binanceFetch(
+      `${BINANCE_SPOT}/api/v3/depth?symbol=${binSym}&limit=100`,
+    ) as { bids: [string, string][]; asks: [string, string][] }
+
+    const toWalls = (levels: [string, string][]): OrderBookWall[] =>
+      levels
+        .map(([p, q]) => ({ price: parseFloat(p), notionalUsd: parseFloat(p) * parseFloat(q) }))
+        .sort((a, b) => b.notionalUsd - a.notionalUsd)
+        .slice(0, 3)
+
+    return { bidWalls: toWalls(data.bids), askWalls: toWalls(data.asks) }
+  } catch {
+    return null
+  }
+}
+
+// ─── Market sentiment (perpetual futures) ──────────────────────────────────
+
+export interface MarketSentiment {
+  longRatio: number    // fraction of accounts that are long (0.58 = 58%)
+  shortRatio: number   // fraction short
+  openInterest: number // current OI in base currency (BTC, ETH …)
+  oiChangePct: number  // % change vs previous 5-min interval (rising = conviction)
+}
+
+export async function fetchMarketSentiment(symbol: string): Promise<MarketSentiment | null> {
+  const futSym = FUTURES_SYMBOL[symbol]
+  if (!futSym) return null
+  try {
+    const [lsRaw, oiRaw] = await Promise.all([
+      binanceFetch(
+        `${BINANCE_FUTURES}/futures/data/globalLongShortAccountRatio?symbol=${futSym}&period=5m&limit=1`,
+      ),
+      binanceFetch(
+        `${BINANCE_FUTURES}/futures/data/openInterestHist?symbol=${futSym}&period=5m&limit=2`,
+      ),
+    ]) as [
+      Array<{ longAccount: string; shortAccount: string }>,
+      Array<{ sumOpenInterest: string }>,
+    ]
+
+    if (!lsRaw.length) return null
+
+    const longRatio  = parseFloat(lsRaw[0].longAccount)
+    const shortRatio = parseFloat(lsRaw[0].shortAccount)
+
+    let openInterest = 0, oiChangePct = 0
+    if (oiRaw.length >= 2) {
+      const prev = parseFloat(oiRaw[0].sumOpenInterest)
+      const curr = parseFloat(oiRaw[1].sumOpenInterest)
+      openInterest = curr
+      oiChangePct  = prev > 0 ? ((curr - prev) / prev) * 100 : 0
+    } else if (oiRaw.length === 1) {
+      openInterest = parseFloat(oiRaw[0].sumOpenInterest)
+    }
+
+    return { longRatio, shortRatio, openInterest, oiChangePct }
+  } catch {
+    return null
+  }
+}
+
 export async function fetchAllPrices(memeCoin = 'DOGE'): Promise<PriceMap> {
   try {
     return await fetchCurrentPrices(['BTC', 'ETH', 'XAU', memeCoin])

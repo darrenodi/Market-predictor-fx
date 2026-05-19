@@ -8,6 +8,10 @@ export interface PerformanceSummary {
   bySymbol: Record<string, { tp: number; sl: number }>
   byDirection: { long: { tp: number; sl: number }; short: { tp: number; sl: number } }
   bySession: Record<string, { tp: number; sl: number }>
+  // symbol + direction + session combos (only entries with ≥5 closed trades)
+  patterns: Array<{ key: string; tp: number; sl: number; wr: number }>
+  // does our confidence score actually predict outcomes?
+  byConfidence: Record<string, { tp: number; sl: number }>
 }
 
 function sessionLabel(createdAt: string): string {
@@ -27,21 +31,29 @@ export async function fetchPerformanceSummary(): Promise<PerformanceSummary | nu
   try {
     const { data } = await supabaseAdmin
       .from('signals')
-      .select('symbol, direction, status, created_at')
+      .select('symbol, direction, status, created_at, confidence')
       .in('status', ['tp_hit', 'sl_hit'])
       .order('created_at', { ascending: false })
+      .limit(500)
 
     if (!data?.length) return null
 
     const summary: PerformanceSummary = {
       total: data.length,
-      tp: 0,
-      sl: 0,
-      winRate: 0,
+      tp: 0, sl: 0, winRate: 0,
       bySymbol: {},
       byDirection: { long: { tp: 0, sl: 0 }, short: { tp: 0, sl: 0 } },
       bySession: {},
+      patterns: [],
+      byConfidence: {
+        '50-59%': { tp: 0, sl: 0 },
+        '60-69%': { tp: 0, sl: 0 },
+        '70-79%': { tp: 0, sl: 0 },
+        '80%+':   { tp: 0, sl: 0 },
+      },
     }
+
+    const patternMap: Record<string, { tp: number; sl: number }> = {}
 
     for (const row of data) {
       const isTP = row.status === 'tp_hit'
@@ -56,7 +68,23 @@ export async function fetchPerformanceSummary(): Promise<PerformanceSummary | nu
       const session = sessionLabel(row.created_at)
       if (!summary.bySession[session]) summary.bySession[session] = { tp: 0, sl: 0 }
       if (isTP) summary.bySession[session].tp++; else summary.bySession[session].sl++
+
+      // Pattern: symbol + direction + session
+      const patKey = `${row.symbol} ${dir.toUpperCase()} @ ${session}`
+      if (!patternMap[patKey]) patternMap[patKey] = { tp: 0, sl: 0 }
+      if (isTP) patternMap[patKey].tp++; else patternMap[patKey].sl++
+
+      // Confidence tier
+      const conf = (row.confidence ?? 0) * 100
+      const tier = conf >= 80 ? '80%+' : conf >= 70 ? '70-79%' : conf >= 60 ? '60-69%' : '50-59%'
+      if (isTP) summary.byConfidence[tier].tp++; else summary.byConfidence[tier].sl++
     }
+
+    // Only keep patterns with ≥5 closed trades, sorted by win rate
+    summary.patterns = Object.entries(patternMap)
+      .filter(([, s]) => s.tp + s.sl >= 5)
+      .map(([key, s]) => ({ key, tp: s.tp, sl: s.sl, wr: winPct(s.tp, s.sl) }))
+      .sort((a, b) => b.wr - a.wr)
 
     summary.winRate = winPct(summary.tp, summary.sl)
     return summary
@@ -97,5 +125,21 @@ By direction:
 By session:
 ${sessionLines}
 
-→ Increase confidence for setups matching ✓ strong patterns. Pull back on ✗ weak ones — adjust direction or skip if no catalyst.`
+→ Increase confidence for setups matching ✓ strong patterns. Pull back on ✗ weak ones — adjust direction or skip if no catalyst.
+
+Pattern edge (symbol + direction + session, ≥5 trades):
+${p.patterns.length === 0 ? '  Insufficient data' : p.patterns.slice(0, 8).map(pat => {
+    const flag = pat.wr >= 65 ? ' ✓ EDGE' : pat.wr <= 40 ? ' ✗ AVOID' : ''
+    return `  ${pat.key.padEnd(48)}: ${pat.tp} TP / ${pat.sl} SL (${pat.wr}%)${flag}`
+  }).join('\n')}
+
+Does your confidence score actually predict outcomes?
+${Object.entries(p.byConfidence).map(([tier, s]) => {
+    const wr = winPct(s.tp, s.sl)
+    const total = s.tp + s.sl
+    if (total === 0) return `  ${tier}: no data`
+    const flag = wr >= 67 ? ' ✓ profitable' : wr <= 50 ? ' ✗ losing' : ' — marginal'
+    return `  ${tier}: ${s.tp} TP / ${s.sl} SL (${wr}%)${flag}`
+  }).join('\n')}
+→ Only assign 80%+ confidence when ALL signals agree and the pattern edge is confirmed above.`
 }

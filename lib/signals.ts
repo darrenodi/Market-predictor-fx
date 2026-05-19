@@ -192,11 +192,53 @@ function buildPrompt(assets: MarketData[], performance?: PerformanceSummary): st
   P&L: ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(3)}% [${pnlPct >= 0 ? 'WINNING' : 'LOSING'}] — only change direction if bias has clearly reversed`
     }
 
+    // Order book walls
+    let obSection = ''
+    if (a.orderBook) {
+      const fmtWall = (w: { price: number; notionalUsd: number }) =>
+        `$${plain(w.price)} ($${(w.notionalUsd / 1000).toFixed(0)}K notional)`
+      const bids = a.orderBook.bidWalls.map(fmtWall).join(' | ')
+      const asks = a.orderBook.askWalls.map(fmtWall).join(' | ')
+
+      // Tell Gemini whether the pre-computed TP clears or hits a wall
+      const tpDist = a.price * 0.0015
+      const longTp  = a.price + tpDist
+      const shortTp = a.price - tpDist
+      const nearAsk  = a.orderBook.askWalls[0]
+      const nearBid  = a.orderBook.bidWalls[0]
+      const longTpClear  = nearAsk  ? longTp  < nearAsk.price  ? '✓ LONG TP clears nearest ask wall'  : '⚠ LONG TP hits through ask wall — may stall' : ''
+      const shortTpClear = nearBid  ? shortTp > nearBid.price  ? '✓ SHORT TP clears nearest bid wall' : '⚠ SHORT TP hits through bid wall — may stall' : ''
+
+      obSection = `  Order Book Walls (Binance real-time):
+    Support  (big bids): ${bids || 'none detected'}
+    Resistance (big asks): ${asks || 'none detected'}
+    ${longTpClear}
+    ${shortTpClear}`
+    }
+
+    // Market sentiment
+    let sentSection = ''
+    if (a.sentiment) {
+      const { longRatio, shortRatio, openInterest, oiChangePct } = a.sentiment
+      const longPct  = (longRatio  * 100).toFixed(1)
+      const shortPct = (shortRatio * 100).toFixed(1)
+      const crowd = longRatio > 0.65 ? '— crowd heavily long → contrarian BEARISH pressure' :
+                    longRatio < 0.35 ? '— crowd heavily short → contrarian BULLISH pressure' :
+                    longRatio > 0.55 ? '— slight long bias' : longRatio < 0.45 ? '— slight short bias' : '— balanced'
+      const oiDir = oiChangePct > 0.5 ? `▲ +${oiChangePct.toFixed(2)}% (rising — conviction building)` :
+                    oiChangePct < -0.5 ? `▼ ${oiChangePct.toFixed(2)}% (falling — positions closing)` :
+                    `≈ flat (${oiChangePct.toFixed(2)}%)`
+      sentSection = `  Futures Sentiment:
+    Long/Short ratio: ${longPct}% long / ${shortPct}% short ${crowd}
+    Open Interest: ${openInterest.toFixed(0)} contracts | OI change: ${oiDir}`
+    }
+
     return `━━━ ${a.symbol} | Price: ${plain(a.price)} | 24h: ${pct(a.change_24h)} ━━━
 ${techSection}
 
 ${slTpGuide}
 
+${obSection ? obSection + '\n' : ''}${sentSection ? sentSection + '\n' : ''}
 ${prevBlock}
 
   News (last 2h):
@@ -245,6 +287,9 @@ DIRECTION — only proceed if above skip rules don't apply, then work in order:
   4. Momentum: 30m + 1h aligned → confirms. Opposing → means choppy, skip or reduce confidence.
   5. Session: HIGH/PEAK → trust momentum breakouts. LOW → fade extremes, tighten size. During LOW session, require 3+/4 signals or skip.
   6. News/whales: strong catalyst overrides weak TA. No catalyst → pure technicals.
+  7. Order book: if TP warning says "⚠ hits through wall" → reduce confidence or flip direction. A $10M+ wall directly above TP = price likely stalls before target.
+  8. Sentiment: crowd >65% long = contrarian bearish pressure. >65% short = contrarian bullish. Use as a secondary signal, not a primary. Rising OI confirms the move; falling OI means weak conviction.
+  9. Pattern edge: if your pattern track record shows ✗ AVOID for this exact setup (symbol + direction + session) → skip or heavily reduce confidence. If ✓ EDGE → raise confidence 0.05–0.10.
 
 TP/SL:
   • Start from the pre-computed levels — they are calibrated for your asset and current ATR.

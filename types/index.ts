@@ -80,4 +80,6 @@ export interface MarketData {
   whales: Array<{ title: string }>
   currentSignal: CurrentSignal | null
   indicators: TechnicalIndicators | null
+  orderBook: import('@/lib/prices').OrderBookData | null
+  sentiment: import('@/lib/prices').MarketSentiment | null
 }

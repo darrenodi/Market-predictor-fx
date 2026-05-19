@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { after } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, fetchFundingRate, computeIndicators, Candle } from '@/lib/prices'
+import { fetchAllPrices, fetchPriceHistory, fetchWeeklyHistory, fetchFundingRate, fetchOrderBookWalls, fetchMarketSentiment, computeIndicators, Candle } from '@/lib/prices'
 import { fetchAllNews, fetchWhaleAlerts } from '@/lib/news'
 import { generateSignals } from '@/lib/signals'
 import { fetchPerformanceSummary } from '@/lib/performance'
@@ -36,11 +36,16 @@ async function runSignalUpdate(memeCoin: string) {
     ...symbols.map(s => fetchPriceHistory(s)),
     ...symbols.map(s => fetchWeeklyHistory(s)),
     ...symbols.map(s => fetchFundingRate(s)),
+    ...symbols.map(s => fetchOrderBookWalls(s)),
+    ...symbols.map(s => fetchMarketSentiment(s)),
   ])
 
-  const priceHistories = histories.slice(0, symbols.length) as Candle[][]
-  const weeklyHistories = histories.slice(symbols.length, symbols.length * 2) as Candle[][]
-  const fundingRates = histories.slice(symbols.length * 2) as (number | null)[]
+  const n = symbols.length
+  const priceHistories  = histories.slice(0,     n) as Candle[][]
+  const weeklyHistories = histories.slice(n,     n * 2) as Candle[][]
+  const fundingRates    = histories.slice(n * 2, n * 3) as (number | null)[]
+  const orderBooks      = histories.slice(n * 3, n * 4) as (Awaited<ReturnType<typeof fetchOrderBookWalls>>)[]
+  const sentiments      = histories.slice(n * 4, n * 5) as (Awaited<ReturnType<typeof fetchMarketSentiment>>)[]
 
   const marketData = symbols
     .map((s, i) => {
@@ -57,6 +62,8 @@ async function runSignalUpdate(memeCoin: string) {
         news: news[s] ?? [],
         whales: whaleAlerts.filter(w => w.symbol === s),
         indicators: computeIndicators(candles, price, weeklyCandles, fundingRate),
+        orderBook: orderBooks[i] ?? null,
+        sentiment: sentiments[i] ?? null,
         currentSignal: existing ? {
           direction: existing.direction,
           entry: existing.market_price,
