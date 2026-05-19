@@ -122,6 +122,16 @@ export async function GET(req: NextRequest) {
   const cfg = Object.fromEntries((config ?? []).map(r => [r.key, r.value]))
   const memeCoin: string = cfg.meme_coin ?? 'DOGE'
 
+  // ?sync=1 — run synchronously and return full debug output (use to diagnose issues)
+  if (req.nextUrl.searchParams.get('sync') === '1') {
+    try {
+      await runSignalUpdate(memeCoin)
+      return NextResponse.json({ ok: true, status: 'done' })
+    } catch (err) {
+      return NextResponse.json({ ok: false, error: String(err) }, { status: 500 })
+    }
+  }
+
   // Return 200 immediately so the cron service doesn't time out.
   // after() keeps the function alive on Vercel to finish the work.
   after(async () => {
