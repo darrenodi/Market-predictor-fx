@@ -167,6 +167,18 @@ export default function AssetCard({ symbol, signal, currentPrice, change24h, pri
         </button>
       </div>
 
+      {/* Confidence */}
+      {signal && (
+        <div className={`text-center text-xs font-semibold py-1 rounded-lg ${
+          signal.confidence >= 0.8 ? 'bg-[#0a2e1a] text-[#22c55e]' :
+          signal.confidence >= 0.7 ? 'bg-[#0d2a10] text-[#4ade80]' :
+          signal.confidence >= 0.6 ? 'bg-[#1a1a0a] text-yellow-400' :
+          'bg-[#0a1220] text-gray-500'
+        }`}>
+          {Math.round(signal.confidence * 100)}% confidence
+        </div>
+      )}
+
       {/* Leverage */}
       <div>
         <p className="text-xs text-gray-400 mb-1">Leverage</p>
