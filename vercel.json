@@ -1,4 +1,5 @@
 {
+  "regions": ["fra1"],
   "crons": [
     { "path": "/api/cron/session-open?session=asia",     "schedule": "0 0 * * *"  },
     { "path": "/api/cron/session-close?session=asia",    "schedule": "0 8 * * *"  },
