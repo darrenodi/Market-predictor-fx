@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Image from 'next/image'
-import { Bell, AlertTriangle } from 'lucide-react'
+import { Bell, AlertTriangle, Check } from 'lucide-react'
 import Sidebar from '@/components/Sidebar'
 
 function fmtUSD(n: number, _compact = false): string {
@@ -66,6 +66,15 @@ export default function CalculatorPage() {
   const [tradingDays, setTradingDays] = useState(30)
   const [marketFee, setMarketFee] = useState(ASSETS.BTC.fee)
   const [profitRemoval, setProfitRemoval] = useState(0)
+  const [checked, setChecked] = useState<Set<number>>(new Set())
+
+  function toggleDay(day: number) {
+    setChecked(prev => {
+      const next = new Set(prev)
+      if (next.has(day)) next.delete(day); else next.add(day)
+      return next
+    })
+  }
 
   const isLong = direction === 'long'
 
@@ -521,9 +530,22 @@ export default function CalculatorPage() {
                       {projection.map((row, i) => {
                         const returnPct = (row.totalValue - balance) / balance * 100
                         const isEven = i % 2 === 0
+                        const isDone = checked.has(row.day)
                         return (
-                          <tr key={row.day} className={isEven ? 'bg-[#060d1a]/40' : ''}>
-                            <td className="px-4 py-2 text-gray-400 text-xs font-medium">{row.day}</td>
+                          <tr key={row.day} className={isDone ? 'bg-[#0a1f0a]/60' : isEven ? 'bg-[#060d1a]/40' : ''}>
+                            <td className="px-4 py-2 text-xs font-medium">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => toggleDay(row.day)}
+                                  className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-all ${
+                                    isDone ? 'bg-[#22c55e] border-[#22c55e]' : 'border-gray-600 hover:border-[#22c55e]'
+                                  }`}
+                                >
+                                  {isDone && <Check size={9} className="text-black" strokeWidth={3} />}
+                                </button>
+                                <span className={isDone ? 'text-gray-500 line-through' : 'text-gray-400'}>{row.day}</span>
+                              </div>
+                            </td>
                             <td className="px-4 py-2 text-right text-[#22c55e] text-xs font-medium">{fmtUSD(row.dailyProfit, true)}</td>
                             {profitRemoval > 0 && <td className="px-4 py-2 text-right text-yellow-400 text-xs">{fmtUSD(row.dailySaved, true)}</td>}
                             <td className="px-4 py-2 text-right text-white text-xs">{fmtUSD(row.balance, true)}</td>
