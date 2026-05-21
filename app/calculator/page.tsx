@@ -32,10 +32,10 @@ function fmtPct(n: number): string {
 const XAF_RATE = 580
 
 type AssetKey = 'BTC' | 'XAU' | 'ETH'
-const ASSETS: Record<AssetKey, { label: string; price: number; move: number; fee: number }> = {
-  BTC: { label: 'BTC',  price: 80000, move: 100, fee: 0.01 },
-  XAU: { label: 'Gold', price: 4500,  move: 3,   fee: 0    },
-  ETH: { label: 'ETH',  price: 2300,  move: 10,  fee: 0.04 },
+const ASSETS: Record<AssetKey, { label: string; price: number; move: number; makerFee: number; takerFee: number }> = {
+  BTC: { label: 'BTC',  price: 80000, move: 100, makerFee: 0.01, takerFee: 0.08 },
+  XAU: { label: 'Gold', price: 4500,  move: 3,   makerFee: 0,    takerFee: 0    },
+  ETH: { label: 'ETH',  price: 2300,  move: 10,  makerFee: 0.01, takerFee: 0.08 },
 }
 
 function fmtXAF(usd: number): string {
@@ -52,7 +52,7 @@ export default function CalculatorPage() {
   const [asset, setAsset] = useState<AssetKey>('BTC')
   const [entryPrice, setEntryPrice] = useState(ASSETS.BTC.price)
   const [balance, setBalance] = useState(50)
-  const [leverage, setLeverage] = useState(50)
+  const [leverage, setLeverage] = useState(200)
   const [direction, setDirection] = useState<'long' | 'short'>('long')
   const [moveAmount, setMoveAmount] = useState(ASSETS.BTC.move)
 
@@ -60,11 +60,13 @@ export default function CalculatorPage() {
     setAsset(key)
     setEntryPrice(ASSETS[key].price)
     setMoveAmount(ASSETS[key].move)
-    setMarketFee(ASSETS[key].fee)
+    setMakerFee(ASSETS[key].makerFee)
+    setTakerFee(ASSETS[key].takerFee)
   }
   const [tradesPerDay, setTradesPerDay] = useState(10)
   const [tradingDays, setTradingDays] = useState(30)
-  const [marketFee, setMarketFee] = useState(ASSETS.BTC.fee)
+  const [makerFee, setMakerFee] = useState(0.01)
+  const [takerFee, setTakerFee] = useState(0.08)
   const [profitRemoval, setProfitRemoval] = useState(0)
   const [checked, setChecked] = useState<Set<number>>(new Set())
 
@@ -89,7 +91,7 @@ export default function CalculatorPage() {
   const liqDist = Math.abs(entryPrice - liqPrice)
   const liqDistPct = entryPrice > 0 ? (liqDist / entryPrice) * 100 : 0
   const movePct = entryPrice > 0 ? (moveAmount / entryPrice) * 100 : 0
-  const fee = positionSize * (marketFee / 100)
+  const fee = positionSize * (makerFee + takerFee) / 100
   const profit = entryPrice > 0 ? (moveAmount / entryPrice) * positionSize - fee : 0
   const roi = balance > 0 ? (profit / balance) * 100 : 0
 
@@ -100,12 +102,12 @@ export default function CalculatorPage() {
   const projection = useMemo(() => {
     if (entryPrice <= 0 || balance <= 0 || moveAmount <= 0) return []
     const movePctDecimal = moveAmount / entryPrice
-    const feeRate = marketFee / 100
+    const feeRate = (makerFee + takerFee) / 100
     const removalRate = profitRemoval / 100
     let bal = balance
     let totalRemoved = 0
     const rows: { day: number; dailyProfit: number; dailySaved: number; balance: number; totalRemoved: number; totalValue: number }[] = []
-    for (let d = 1; d <= Math.min(tradingDays, 365); d++) {
+    for (let d = 1; d <= Math.min(tradingDays, 1000); d++) {
       let dailyProfit = 0
       let dailySaved = 0
       for (let t = 0; t < tradesPerDay; t++) {
@@ -120,7 +122,7 @@ export default function CalculatorPage() {
       rows.push({ day: d, dailyProfit, dailySaved, balance: bal, totalRemoved, totalValue: bal + totalRemoved })
     }
     return rows
-  }, [entryPrice, balance, leverage, moveAmount, tradesPerDay, tradingDays, marketFee, profitRemoval])
+  }, [entryPrice, balance, leverage, moveAmount, tradesPerDay, tradingDays, makerFee, takerFee, profitRemoval])
 
   function handleTargetInput(val: number) {
     const move = isLong ? val - entryPrice : entryPrice - val
@@ -383,7 +385,7 @@ export default function CalculatorPage() {
                 <p className="text-xs text-gray-500 mb-1">Potential Profit</p>
                 <p className="text-2xl font-bold text-[#22c55e]">{fmtUSD(profit, true)}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {movePct.toFixed(2)}% move × {fmtUSD(positionSize, true)} − {fmtUSD(fee)} fee ({marketFee}%)
+                  {movePct.toFixed(2)}% move × {fmtUSD(positionSize, true)} − {fmtUSD(fee)} fees (maker {makerFee}% + taker {takerFee}%)
                 </p>
               </div>
 
@@ -431,10 +433,10 @@ export default function CalculatorPage() {
                     <input
                       type="number"
                       value={tradingDays}
-                      onChange={e => setTradingDays(Math.max(1, Math.min(365, parseInt(e.target.value) || 1)))}
+                      onChange={e => setTradingDays(Math.max(1, Math.min(1000, parseInt(e.target.value) || 1)))}
                       className="flex-1 bg-transparent text-white text-sm outline-none min-w-0"
                       min={1}
-                      max={365}
+                      max={1000}
                     />
                   </div>
                 </div>
@@ -455,19 +457,34 @@ export default function CalculatorPage() {
                   <p className="text-[10px] text-gray-600 mt-1">banked each trade, added to final value</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1.5">Fee per trade (%)</label>
+                  <label className="text-xs text-gray-400 block mb-1.5">Maker fee (%)</label>
                   <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2 focus-within:border-[#22c55e] transition-colors">
                     <input
                       type="number"
-                      value={marketFee}
-                      onChange={e => setMarketFee(Math.max(0, parseFloat(e.target.value) || 0))}
+                      value={makerFee}
+                      onChange={e => setMakerFee(Math.max(0, parseFloat(e.target.value) || 0))}
                       className="flex-1 bg-transparent text-white text-sm outline-none min-w-0"
                       min={0}
                       step={0.001}
                     />
                     <span className="text-gray-500 text-xs ml-1">%</span>
                   </div>
-                  <p className="text-[10px] text-gray-600 mt-1">deducted from position size each trade</p>
+                  <p className="text-[10px] text-gray-600 mt-1">limit order entry/exit</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1.5">Taker fee (%)</label>
+                  <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2 focus-within:border-[#22c55e] transition-colors">
+                    <input
+                      type="number"
+                      value={takerFee}
+                      onChange={e => setTakerFee(Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="flex-1 bg-transparent text-white text-sm outline-none min-w-0"
+                      min={0}
+                      step={0.001}
+                    />
+                    <span className="text-gray-500 text-xs ml-1">%</span>
+                  </div>
+                  <p className="text-[10px] text-gray-600 mt-1">market order entry/exit</p>
                 </div>
               </div>
 
