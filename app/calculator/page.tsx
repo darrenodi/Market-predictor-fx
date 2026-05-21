@@ -60,8 +60,6 @@ export default function CalculatorPage() {
     setAsset(key)
     setEntryPrice(ASSETS[key].price)
     setMoveAmount(ASSETS[key].move)
-    setMakerFee(ASSETS[key].makerFee)
-    setTakerFee(ASSETS[key].takerFee)
   }
   const [tradesPerDay, setTradesPerDay] = useState(10)
   const [tradingDays, setTradingDays] = useState(30)
