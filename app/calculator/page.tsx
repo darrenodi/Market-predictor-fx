@@ -92,6 +92,7 @@ export default function CalculatorPage() {
   const fee = positionSize * (makerFee + takerFee) / 100
   const grossProfit = entryPrice > 0 ? (moveAmount / entryPrice) * positionSize : 0
   const profit = grossProfit - fee
+  const grossRoi = balance > 0 ? (grossProfit / balance) * 100 : 0
   const roi = balance > 0 ? (profit / balance) * 100 : 0
 
   // Warning: target is on the liquidation side (trade wiped before TP)
@@ -401,11 +402,19 @@ export default function CalculatorPage() {
 
               {/* ROI */}
               <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-1">ROI on Balance <span className="text-gray-600">(net of fees)</span></p>
-                <p className={`text-2xl font-bold ${roi >= 0 ? 'text-[#22c55e]' : 'text-red-400'}`}>{fmtPct(roi)}</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {fmtUSD(profit, true)} net profit on {fmtUSD(balance)} margin
-                </p>
+                <p className="text-xs text-gray-500 mb-1">ROI on Balance</p>
+                <div className="flex items-end gap-3">
+                  <p className={`text-2xl font-bold ${roi >= 0 ? 'text-[#22c55e]' : 'text-red-400'}`}>{fmtPct(roi)}</p>
+                  <p className="text-sm text-gray-500 mb-0.5">net of fees</p>
+                </div>
+                <div className="flex justify-between text-xs mt-2">
+                  <span className="text-gray-500">Yield before fees</span>
+                  <span className="text-gray-300">{fmtPct(grossRoi)}</span>
+                </div>
+                <div className="flex justify-between text-xs mt-0.5">
+                  <span className="text-gray-500">Net after fees</span>
+                  <span className={roi >= 0 ? 'text-[#22c55e]' : 'text-red-400'}>{fmtPct(roi)}</span>
+                </div>
               </div>
 
               {/* Disclaimer */}
