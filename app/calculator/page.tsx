@@ -90,7 +90,8 @@ export default function CalculatorPage() {
   const liqDistPct = entryPrice > 0 ? (liqDist / entryPrice) * 100 : 0
   const movePct = entryPrice > 0 ? (moveAmount / entryPrice) * 100 : 0
   const fee = positionSize * (makerFee + takerFee) / 100
-  const profit = entryPrice > 0 ? (moveAmount / entryPrice) * positionSize - fee : 0
+  const grossProfit = entryPrice > 0 ? (moveAmount / entryPrice) * positionSize : 0
+  const profit = grossProfit - fee
   const roi = balance > 0 ? (profit / balance) * 100 : 0
 
   // Warning: target is on the liquidation side (trade wiped before TP)
@@ -380,25 +381,36 @@ export default function CalculatorPage() {
 
               {/* Potential profit */}
               <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-1">Potential Profit</p>
-                <p className="text-2xl font-bold text-[#22c55e]">{fmtUSD(profit, true)}</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {movePct.toFixed(2)}% move × {fmtUSD(positionSize, true)} − {fmtUSD(fee)} fees (maker {makerFee}% + taker {takerFee}%)
-                </p>
+                <p className="text-xs text-gray-500 mb-1">Net Profit <span className="text-gray-600">(after fees)</span></p>
+                <p className={`text-2xl font-bold ${profit >= 0 ? 'text-[#22c55e]' : 'text-red-400'}`}>{fmtUSD(profit, true)}</p>
+                <div className="mt-2 space-y-0.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">Gross ({movePct.toFixed(3)}% × {fmtUSD(positionSize, true)})</span>
+                    <span className="text-gray-300">+{fmtUSD(grossProfit, true)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">Fees (maker {makerFee}% + taker {takerFee}%)</span>
+                    <span className="text-red-400">−{fmtUSD(fee)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs border-t border-[#1e3a5f] pt-1 mt-1">
+                    <span className="text-gray-400 font-medium">Net profit</span>
+                    <span className={`font-semibold ${profit >= 0 ? 'text-[#22c55e]' : 'text-red-400'}`}>{fmtUSD(profit, true)}</span>
+                  </div>
+                </div>
               </div>
 
               {/* ROI */}
               <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-1">ROI on Balance</p>
-                <p className="text-2xl font-bold text-[#22c55e]">{fmtPct(roi)}</p>
+                <p className="text-xs text-gray-500 mb-1">ROI on Balance <span className="text-gray-600">(net of fees)</span></p>
+                <p className={`text-2xl font-bold ${roi >= 0 ? 'text-[#22c55e]' : 'text-red-400'}`}>{fmtPct(roi)}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {fmtUSD(profit, true)} profit on {fmtUSD(balance)} balance
+                  {fmtUSD(profit, true)} net profit on {fmtUSD(balance)} margin
                 </p>
               </div>
 
               {/* Disclaimer */}
               <p className="text-xs text-gray-600 px-1 pt-1 leading-relaxed">
-                Estimates only — does not include funding fees, trading fees, or exchange-specific margin modes.
+                Estimates only — does not include funding rates or exchange-specific margin modes. Trading fees (maker + taker) are included above.
               </p>
             </div>
 
