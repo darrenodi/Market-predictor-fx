@@ -6,6 +6,7 @@
     { "path": "/api/cron/session-open?session=london",   "schedule": "0 9 * * *"  },
     { "path": "/api/cron/session-close?session=london",  "schedule": "0 17 * * *" },
     { "path": "/api/cron/session-open?session=newyork",  "schedule": "0 13 * * *" },
-    { "path": "/api/cron/session-close?session=newyork", "schedule": "0 21 * * *" }
+    { "path": "/api/cron/session-close?session=newyork", "schedule": "0 21 * * *" },
+    { "path": "/api/mexcbot/scheduler",                  "schedule": "0 8-18 * * 1-5" }
   ]
 }

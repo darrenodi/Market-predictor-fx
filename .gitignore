@@ -219,3 +219,4 @@ out/
 .env.development.local
 .env.test.local
 .vercel
+Bot/.scalper-state.json
