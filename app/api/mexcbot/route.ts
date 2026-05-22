@@ -25,14 +25,14 @@ const CONFIG = {
   ACCESS_KEY:            process.env.MEXC_ACCESS_KEY || '',
   SECRET_KEY:            process.env.MEXC_SECRET_KEY || '',
   BASE_URL:              'https://contract.mexc.com',
-  SYMBOL:                'BTC_USDT',
-  CONTRACT_SIZE:         0.0001,       // 1 contract = 0.0001 BTC
-  LEVERAGE:              60,
-  TP_MOVE_PERCENT:       0.13,         // % price move to TP (matches simulation)
-  SL_THRESHOLD_BALANCE:  100,
-  SL_ROE_ACTIVE:         18.5,
-  DIRECTION:             'LONG' as 'LONG' | 'SHORT',
-  LIMIT_OFFSET_PERCENT:  0.002,
+  SYMBOL:               'BTC_USDT',
+  CONTRACT_SIZE:        0.0001,        // 1 contract = 0.0001 BTC
+  LEVERAGE_MIN:         60,            // randomised per trade to disguise automation
+  LEVERAGE_MAX:         70,
+  TP_MOVE_FLOOR:        0.13,          // minimum TP % — never goes below (fee floor)
+  TP_MOVE_CEILING:      0.20,          // maximum TP % — oscillates within range
+  DIRECTION:            'LONG' as 'LONG' | 'SHORT',
+  LIMIT_OFFSET_PERCENT: 0.002,
 }
 
 // ─── SIGNATURE ───────────────────────────────────────────────────────────────
@@ -102,11 +102,6 @@ function calcVolume(balance: number, leverage: number, price: number) {
   return Math.max(Math.floor((balance * leverage) / (price * CONFIG.CONTRACT_SIZE)), 1)
 }
 
-function calcSLPrice(entry: number, roePct: number, leverage: number, dir: 'LONG' | 'SHORT') {
-  const move = (roePct * entry) / (leverage * 100)
-  return dir === 'LONG' ? entry - move : entry + move
-}
-
 // ─── TRADE ACTIONS ───────────────────────────────────────────────────────────
 
 async function executeTrade(direction: 'LONG' | 'SHORT') {
@@ -120,51 +115,40 @@ async function executeTrade(direction: 'LONG' | 'SHORT') {
 
     if (balance < 1) return { success: false, message: `Balance too low: $${balance}` }
 
+    // Randomise leverage + TP each trade to disguise automation patterns
+    const leverage  = Math.floor(Math.random() * (CONFIG.LEVERAGE_MAX - CONFIG.LEVERAGE_MIN + 1)) + CONFIG.LEVERAGE_MIN
+    const tpMovePct = parseFloat((CONFIG.TP_MOVE_FLOOR + Math.random() * (CONFIG.TP_MOVE_CEILING - CONFIG.TP_MOVE_FLOOR)).toFixed(4))
+
     await apiPost('/api/v1/private/position/change_leverage', {
-      symbol: CONFIG.SYMBOL, leverage: CONFIG.LEVERAGE, openType: 1,
+      symbol: CONFIG.SYMBOL, leverage, openType: 1,
       positionType: direction === 'LONG' ? 1 : 2,
     })
 
-    const offset    = price * (CONFIG.LIMIT_OFFSET_PERCENT / 100)
-    const entry     = direction === 'LONG' ? price + offset : price - offset
-    const tpMove    = entry * (CONFIG.TP_MOVE_PERCENT / 100)
-    const tpPrice   = direction === 'LONG' ? entry + tpMove : entry - tpMove
-    const slPrice   = balance > CONFIG.SL_THRESHOLD_BALANCE
-      ? calcSLPrice(entry, CONFIG.SL_ROE_ACTIVE, CONFIG.LEVERAGE, direction)
-      : null
-    const volume    = calcVolume(balance, CONFIG.LEVERAGE, price)
-    const posSize   = volume * price * CONFIG.CONTRACT_SIZE
+    const offset  = price * (CONFIG.LIMIT_OFFSET_PERCENT / 100)
+    const entry   = direction === 'LONG' ? price + offset : price - offset
+    const tpMove  = entry * (tpMovePct / 100)
+    const tpPrice = direction === 'LONG' ? entry + tpMove : entry - tpMove
+    const volume  = calcVolume(balance, leverage, price)
+    const posSize = volume * price * CONFIG.CONTRACT_SIZE
 
-    logs.push(`Direction: ${direction}`, `Entry: $${entry.toFixed(2)}`, `TP: $${tpPrice.toFixed(2)} (+${CONFIG.TP_MOVE_PERCENT}%)`, `Vol: ${volume}  Pos: $${posSize.toFixed(2)}`)
+    logs.push(`${direction}  lev=${leverage}×  TP=${tpMovePct}%  entry=$${entry.toFixed(2)}  tpPrice=$${tpPrice.toFixed(2)}  vol=${volume}  pos=$${posSize.toFixed(2)}`)
 
-    // Entry order — limit (type 1), no built-in TP so exit can be placed as Post-Only
-    const orderBody: Record<string, unknown> = {
+    const order = await apiPost('/api/v1/private/order/submit', {
       symbol:   CONFIG.SYMBOL,
       price:    parseFloat(entry.toFixed(2)),
       vol:      volume,
-      leverage: CONFIG.LEVERAGE,
+      leverage,
       side:     direction === 'LONG' ? 1 : 3,   // 1=Open Long  3=Open Short
       type:     1,    // limit (maker entry)
       openType: 1,    // isolated margin
-    }
-    // Attach SL when active — TP is handled separately via /close for Post-Only fee
-    if (slPrice) {
-      orderBody.slType  = 1
-      orderBody.slPrice = parseFloat(slPrice.toFixed(2))
-    }
-
-    const order = await apiPost('/api/v1/private/order/submit', orderBody)
+    })
     logs.push(`Order: ${JSON.stringify(order)}`)
 
     return {
       success: order.success,
-      message: order.success ? 'Order placed — fire /close once filled' : order.message,
+      message: order.success ? 'Order placed' : order.message,
       order,
-      trade: {
-        symbol: CONFIG.SYMBOL, direction, balance, price, entry,
-        tpPrice, slPrice, volume, posSize, leverage: CONFIG.LEVERAGE,
-        tpMovePct: CONFIG.TP_MOVE_PERCENT,
-      },
+      trade: { symbol: CONFIG.SYMBOL, direction, balance, price, entry, tpPrice, volume, posSize, leverage, tpMovePct },
       logs,
     }
   } catch (err) {
@@ -179,7 +163,7 @@ async function executeClose(direction: 'LONG' | 'SHORT', volume: number, price: 
       symbol:   CONFIG.SYMBOL,
       price:    parseFloat(price.toFixed(2)),
       vol:      volume,
-      leverage: CONFIG.LEVERAGE,
+      leverage: CONFIG.LEVERAGE_MIN,
       side:     direction === 'LONG' ? 4 : 2,   // 4=Close Long  2=Close Short
       type:     2,    // Post-Only — forced maker, rejected if would be taker
       openType: 1,
@@ -205,8 +189,8 @@ async function getStatus() {
     ])
     return {
       success: true, balance, price,
-      symbol: CONFIG.SYMBOL, leverage: CONFIG.LEVERAGE,
-      tpMovePct: CONFIG.TP_MOVE_PERCENT, slThreshold: CONFIG.SL_THRESHOLD_BALANCE,
+      symbol: CONFIG.SYMBOL, leverageRange: `${CONFIG.LEVERAGE_MIN}–${CONFIG.LEVERAGE_MAX}`,
+      tpFloor: CONFIG.TP_MOVE_FLOOR, tpCeiling: CONFIG.TP_MOVE_CEILING,
       openPosition: position || null, hasOpenPosition: !!position,
     }
   } catch (err) {
@@ -241,8 +225,7 @@ export async function POST(req: NextRequest) {
 
   if (action === 'config') {
     if (symbol)   CONFIG.SYMBOL = symbol
-    if (leverage) CONFIG.LEVERAGE = leverage
-    if (tpMove)   CONFIG.TP_MOVE_PERCENT = tpMove
+    if (tpMove)   CONFIG.TP_MOVE_FLOOR = tpMove
     return NextResponse.json({ success: true, config: CONFIG })
   }
 

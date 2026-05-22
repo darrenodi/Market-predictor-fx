@@ -381,11 +381,11 @@ async function runTrade(dir) {
 
   log(`✓ Trade closed  Gross: ${fmtUsd(gross)}  Fee: ${fmtUsd(fee)}  Net: ${fmtUsd(net)}`)
 
-  // 10. Drift TP floor upward — always positive, persisted to disk
-  const drift = C.TP_MOVE_DRIFT * (0.3 + Math.random() * 0.7)  // 30–100% of max drift
-  state.tpMove = Math.max(parseFloat((state.tpMove + drift).toFixed(4)), C.TP_MOVE_FLOOR)
+  // 10. Oscillate TP — can go up or down, clamped to floor (never lose money)
+  const delta = (Math.random() - 0.5) * C.TP_MOVE_DRIFT * 2   // -drift to +drift
+  state.tpMove = Math.max(parseFloat((state.tpMove + delta).toFixed(4)), C.TP_MOVE_FLOOR)
   saveState()
-  log(`TP floor → ${state.tpMove.toFixed(4)}%  (persisted)`)
+  log(`TP → ${state.tpMove.toFixed(4)}%  (floor: ${C.TP_MOVE_FLOOR}%)`)
 
   log(`Day total: ${state.trades} trades  PnL: ${fmtUsd(state.pnl)}  TP floor: ${state.tpMove.toFixed(4)}%`)
   return true

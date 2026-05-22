@@ -10,7 +10,6 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -23,89 +22,19 @@ const CONFIG = {
   BASE_URL:          'https://contract.mexc.com',
   BOT_SECRET:        process.env.BOT_SECRET || '',
   SYMBOL:            'BTC_USDT',
-  LEVERAGE:          60,
-  TP_MOVE_PERCENT:   0.13,
   MAX_TRADES_PER_DAY: 10,
   MIN_BALANCE:       1.0,
-  CANDLE_INTERVAL:   'Min1',
-  TREND_CANDLES:     3,
-  MIN_MOVE_PCT:      0.01,
+  MIN_CONFIDENCE:    0.70,   // skip trade if AI signal below this
 }
 
-// ─── SIGNATURE ───────────────────────────────────────────────────────────────
+// ─── AI SIGNAL ───────────────────────────────────────────────────────────────
 
-function sign(accessKey: string, secretKey: string, timestamp: string, params = '') {
-  return crypto
-    .createHmac('sha256', secretKey)
-    .update(accessKey + timestamp + params)
-    .digest('hex')
-}
-
-function getHeaders(params = '') {
-  const timestamp = Date.now().toString()
-  return {
-    'Content-Type': 'application/json',
-    'ApiKey':       CONFIG.ACCESS_KEY,
-    'Request-Time': timestamp,
-    'Signature':    sign(CONFIG.ACCESS_KEY, CONFIG.SECRET_KEY, timestamp, params),
-  }
-}
-
-// ─── API ─────────────────────────────────────────────────────────────────────
-
-async function apiGet(path: string, queryParams: Record<string, string | number> = {}) {
-  const sorted = Object.entries(queryParams)
-    .filter(([, v]) => v !== null && v !== undefined)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}=${v}`)
-    .join('&')
-
-  const headers = getHeaders(sorted)
-  const url = `${CONFIG.BASE_URL}${path}${sorted ? '?' + sorted : ''}`
-  const res = await fetch(url, { method: 'GET', headers })
-  return res.json()
-}
-
-// ─── CANDLES + TREND ─────────────────────────────────────────────────────────
-
-interface Candle { time: number; open: number; close: number; high: number; low: number }
-
-async function getCandles(symbol: string, limit = 5): Promise<Candle[]> {
-  const res = await apiGet('/api/v1/contract/kline', {
-    symbol,
-    interval: CONFIG.CANDLE_INTERVAL,
-    limit,
-  })
-
-  if (!res.success || !res.data) return []
-
-  return (res.data.time || []).map((t: number, i: number) => ({
-    time:  t,
-    open:  parseFloat(res.data.open?.[i]  || 0),
-    close: parseFloat(res.data.close?.[i] || 0),
-    high:  parseFloat(res.data.high?.[i]  || 0),
-    low:   parseFloat(res.data.low?.[i]   || 0),
-  }))
-}
-
-function detectTrend(candles: Candle[]): 'LONG' | 'SHORT' | null {
-  if (candles.length < CONFIG.TREND_CANDLES) return null
-
-  const recent = candles.slice(-CONFIG.TREND_CANDLES)
-
-  const allGreen = recent.every(c => {
-    const movePct = Math.abs(c.close - c.open) / c.open * 100
-    return c.close > c.open && movePct >= CONFIG.MIN_MOVE_PCT
-  })
-
-  const allRed = recent.every(c => {
-    const movePct = Math.abs(c.close - c.open) / c.open * 100
-    return c.close < c.open && movePct >= CONFIG.MIN_MOVE_PCT
-  })
-
-  if (allGreen) return 'LONG'
-  if (allRed)   return 'SHORT'
-  return null
+async function getBTCSignal(origin: string): Promise<{ direction: 'LONG' | 'SHORT'; confidence: number } | null> {
+  const res = await fetch(`${origin}/api/instant`, { signal: AbortSignal.timeout(90_000) })
+  if (!res.ok) throw new Error(`Signal fetch failed: ${res.status}`)
+  const data = await res.json()
+  const btc = (data.signals ?? []).find((s: { symbol: string }) => s.symbol === 'BTC')
+  return btc ?? null
 }
 
 // ─── TRADE COUNT (resets on cold start) ──────────────────────────────────────
@@ -163,16 +92,20 @@ async function runScheduler(req: NextRequest) {
     return { success: false, reason: `Balance too low: $${status.balance}`, logs }
   }
 
-  const candles = await getCandles(CONFIG.SYMBOL)
-  logs.push(`Fetched ${candles.length} candles`)
-
-  const trend = detectTrend(candles)
-  logs.push(`Trend: ${trend ?? 'NONE — skipping'}`)
-
-  if (!trend) {
-    return { success: true, skipped: true, reason: 'No clear trend', candles: candles.slice(-3), logs }
+  logs.push('Fetching AI signal…')
+  const signal = await getBTCSignal(req.nextUrl.origin)
+  if (!signal) {
+    return { success: true, skipped: true, reason: 'No BTC signal returned', logs }
   }
 
+  const pct = (signal.confidence * 100).toFixed(0)
+  logs.push(`AI signal: ${signal.direction} @ ${pct}%`)
+
+  if (signal.confidence < CONFIG.MIN_CONFIDENCE) {
+    return { success: true, skipped: true, reason: `Confidence ${pct}% below ${CONFIG.MIN_CONFIDENCE * 100}% minimum`, logs }
+  }
+
+  const trend = signal.direction
   logs.push(`Placing ${trend} trade…`)
   const tradeRes = await fetch(botUrl(req), {
     method: 'POST',
