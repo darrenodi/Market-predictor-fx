@@ -93,9 +93,9 @@ function computeBias(ind: TechnicalIndicators, price: number): {
 
 function getSession(): { name: string; quality: string; note: string } {
   const h = new Date().getUTCHours()
-  if (h >= 13 && h < 16) return { name: 'London/NY Overlap', quality: 'PEAK', note: 'Highest liquidity — breakouts and momentum moves are reliable' }
-  if (h >= 16 && h < 21) return { name: 'New York', quality: 'HIGH', note: 'Institutional flow — trend continuations valid, watch for reversals at NY close' }
-  if (h >= 9 && h < 13) return { name: 'London', quality: 'HIGH', note: 'London in full flow — strong momentum moves, trend-follow the established direction' }
+  if (h >= 13 && h < 16) return { name: 'London/NY Overlap', quality: 'PEAK', note: 'Highest liquidity — 79% historical win rate. Breakouts and momentum moves are reliable. Favour this session.' }
+  if (h >= 16 && h < 21) return { name: 'New York', quality: 'CAUTION', note: 'Historical win rate is only 54% — BELOW the 67% breakeven for 0.5:1 R/R. Require ALL 4 signals to agree before entering. Prefer skip over a marginal setup. Do NOT enter after 19:00 UTC.' }
+  if (h >= 9 && h < 13) return { name: 'London', quality: 'HIGH', note: 'London in full flow — 71% historical win rate. Strong momentum moves, trend-follow the established direction.' }
   if (h === 8) return { name: 'London Open', quality: 'DANGER', note: 'Stop-hunt hour — institutions spike price to grab liquidity before reversing. Avoid new entries, wait for direction to commit after 09:00 UTC' }
   if (h >= 21 || h < 2) return { name: 'Post-NY / Pre-Asia', quality: 'LOW', note: 'Thin volume — choppy price action, avoid breakouts, range-play only' }
   return { name: 'Asia', quality: 'LOW', note: 'Reduced volume — tight ranges, fake breakouts common, prefer counter-trend fades' }
@@ -277,15 +277,21 @@ ${assetBlocks}
 
 SKIP FIRST — before picking direction, check these:
   🚫 If asset block shows "CHOPPY MARKET DETECTED" → confidence=0.0. No exceptions unless a major news event clearly resolves direction. Choppy markets eat SL hits.
-  🚫 If biasScore < 2 AND session is LOW/DANGER AND no strong news → confidence=0.0.
+  🚫 If biasScore < 2 AND session is LOW/DANGER/CAUTION AND no strong news → confidence=0.0.
   🚫 If weekly bias and 24h structure disagree AND 30m/1h momentum also conflict → no edge exists. confidence=0.0.
+  🚫 If session is CAUTION (New York 16-21 UTC) and fewer than 4/4 signals agree → confidence=0.0. Historical WR in this session is 54%, below the profitability threshold.
+  🚫 XAU/USD: 56% of gold signals expire without hitting TP or SL. Only enter XAU when momentum is confirmed by BOTH 30m and 1h AND volume is elevated. If conviction is not high, set confidence=0.0.
+
+DIRECTION BIAS (from live 7-day track record):
+  ⚠ SHORT signals win at 72% vs LONG at 61%. For LONG entries, require at minimum 3/4 signals aligned regardless of session. A marginal long is worse than a skip.
+  ✓ SHORT signals are profitable across all sessions except NY. Lean short when TA is ambiguous.
 
 DIRECTION — only proceed if above skip rules don't apply, then work in order:
   1. Weekly bias + 24h structure: strongest signal. If both agree → that is your direction.
   2. EMA stack (8/21/50): bullish stack (8>21>50) → long; bearish (8<21<50) → short.
   3. RSI(14): ≥70 overbought → short pressure; ≤30 oversold → long pressure.
   4. Momentum: 30m + 1h aligned → confirms. Opposing → means choppy, skip or reduce confidence.
-  5. Session: HIGH/PEAK → trust momentum breakouts. LOW → fade extremes, tighten size. During LOW session, require 3+/4 signals or skip.
+  5. Session: PEAK → trust momentum breakouts. HIGH → trend-follow. CAUTION (NY) → skip unless 4/4. LOW → fade extremes only.
   6. News/whales: strong catalyst overrides weak TA. No catalyst → pure technicals.
   7. Order book: if TP warning says "⚠ hits through wall" → reduce confidence or flip direction. A $10M+ wall directly above TP = price likely stalls before target.
   8. Sentiment: crowd >65% long = contrarian bearish pressure. >65% short = contrarian bullish. Use as a secondary signal, not a primary. Rising OI confirms the move; falling OI means weak conviction.
