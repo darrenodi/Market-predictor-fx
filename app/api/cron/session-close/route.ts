@@ -6,6 +6,7 @@ import { sendMessage } from '@/lib/telegram'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
+const DAILY_SESSION_NOTIFICATIONS_ENABLED = false
 
 // Simulated position sizing for daily predictions
 const DAILY_LEVERAGE = 10
@@ -109,7 +110,7 @@ export async function GET(req: NextRequest) {
       const before = dailyBalance
       dailyBalance = TOPUP_AMOUNT
       const groupId = process.env.TELEGRAM_GROUP_ID ?? ''
-      if (groupId) {
+      if (DAILY_SESSION_NOTIFICATIONS_ENABLED && groupId) {
         await sendMessage(groupId,
           `⚠️ <b>Daily Balance Reset</b>\n` +
           `Balance dropped to $${plain(before)} — reset to $${TOPUP_AMOUNT.toLocaleString()}`
@@ -125,9 +126,9 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    // Telegram summary
+    // Telegram summary (paused)
     const groupId = process.env.TELEGRAM_GROUP_ID ?? ''
-    if (groupId && results.length > 0) {
+    if (DAILY_SESSION_NOTIFICATIONS_ENABLED && groupId && results.length > 0) {
       const sc = SESSIONS[session]
       const correct = results.filter(r => r.outcome === 'correct').length
       const sessionPnl = results.reduce((s, r) => s + r.pnl, 0)
@@ -146,6 +147,8 @@ export async function GET(req: NextRequest) {
         `Score: ${correct}/${results.length} | Session P&L: ${sessionPnl >= 0 ? '+' : ''}$${sessionPnl.toFixed(2)}\n` +
         `Daily balance: $${plain(dailyBalance)}`
       )
+    } else {
+      console.log(`[session-close] Telegram notification paused for ${session}`)
     }
 
     return NextResponse.json({ ok: true, evaluated: results.length, daily_balance: dailyBalance })

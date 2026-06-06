@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/bot-scheduler",
+      "schedule": "*/6 8-18 * * 1-5"
+    }
+  ]
+}

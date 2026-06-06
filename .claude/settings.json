@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s 'https://jzdjrfnvzxhozwnljvxk.supabase.co/rest/v1/signals?created_at=gte.2026-05-15T00:00:00Z&select=symbol,direction,status,confidence,market_price,tp,sl,reasoning,created_at&order=created_at.desc' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6ZGpyZm52enhob3p3bmxqdnhrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODA4OTA1NywiZXhwIjoyMDkzNjY1MDU3fQ.rhMOu387bS363a7N-lgvhAr03jyHnlUwPe-AeODz47U' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6ZGpyZm52enhob3p3bmxqdnhrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODA4OTA1NywiZXhwIjoyMDkzNjY1MDU3fQ.rhMOu387bS363a7N-lgvhAr03jyHnlUwPe-AeODz47U')",
+      "Bash(python3 -c ' *)",
+      "Bash(lsof -i :3000 -sTCP:LISTEN)",
+      "Bash(curl -sv http://localhost:3000/api/mexcbot?action=status -H 'x-bot-secret: XAUTgold99bot')",
+      "Bash(lsof -i -sTCP:LISTEN -P)",
+      "Bash(awk '{print $9}')",
+      "Bash(curl -s \"http://localhost:3001/api/mexcbot?action=status\" -H \"x-bot-secret: XAUTgold99bot\")",
+      "Bash(curl -s \"http://localhost:3001/api/mexcbot?action=status\")",
+      "Bash(curl -s \"http://localhost:3001/api/mexcbot?action=foo\" -H \"x-bot-secret: XAUTgold99bot\")",
+      "Bash(curl -s -X POST http://localhost:3001/api/mexcbot -H 'x-bot-secret: XAUTgold99bot' -H 'Content-Type: application/json' -d '{\"action\":\"config\",\"leverage\":50}')"
+    ]
+  }
+}

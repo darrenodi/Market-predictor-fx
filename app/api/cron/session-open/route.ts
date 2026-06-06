@@ -6,6 +6,7 @@ import { sendMessage } from '@/lib/telegram'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+const DAILY_SESSION_NOTIFICATIONS_ENABLED = false
 
 function isAuthorized(req: NextRequest): boolean {
   if (process.env.NODE_ENV === 'development') return true
@@ -104,9 +105,9 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Telegram notification
+    // Telegram notification (paused)
     const groupId = process.env.TELEGRAM_GROUP_ID ?? ''
-    if (groupId && predictions.length > 0) {
+    if (DAILY_SESSION_NOTIFICATIONS_ENABLED && groupId && predictions.length > 0) {
       const sc = SESSIONS[session]
       const lines = predictions.map(p =>
         `${p.predicted_direction === 'up' ? '📈' : '📉'} <b>${p.symbol}</b>` +
@@ -122,6 +123,8 @@ export async function GET(req: NextRequest) {
         `━━━━━━━━━━━━━━━━\n${lines}\n━━━━━━━━━━━━━━━━\n` +
         `Daily balance: $${plain(dailyBalance)}`
       )
+    } else {
+      console.log(`[session-open] Telegram notification paused for ${session}`)
     }
 
     return NextResponse.json({ ok: true, session, predictions_generated: predictions.length })
