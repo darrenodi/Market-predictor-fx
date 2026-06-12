@@ -55,11 +55,13 @@ export default function CalculatorPage() {
   const [leverage, setLeverage] = useState(200)
   const [direction, setDirection] = useState<'long' | 'short'>('long')
   const [moveAmount, setMoveAmount] = useState(ASSETS.BTC.move)
+  const [maxPosition, setMaxPosition] = useState(1_000_000)
 
   function selectAsset(key: AssetKey) {
     setAsset(key)
     setEntryPrice(ASSETS[key].price)
     setMoveAmount(ASSETS[key].move)
+    if (key === 'XAU') setLeverage(40)
   }
   const [tradesPerDay, setTradesPerDay] = useState(10)
   const [tradingDays, setTradingDays] = useState(30)
@@ -83,14 +85,16 @@ export default function CalculatorPage() {
 
   // Core calculations
   const positionSize = balance * leverage
+  const cappedPositionSize = Math.min(positionSize, maxPosition)
+  const effectiveMargin = leverage > 0 ? cappedPositionSize / leverage : 0
   const liqPrice = isLong
     ? entryPrice - entryPrice / leverage
     : entryPrice + entryPrice / leverage
   const liqDist = Math.abs(entryPrice - liqPrice)
   const liqDistPct = entryPrice > 0 ? (liqDist / entryPrice) * 100 : 0
   const movePct = entryPrice > 0 ? (moveAmount / entryPrice) * 100 : 0
-  const fee = positionSize * (makerFee + takerFee) / 100
-  const grossProfit = entryPrice > 0 ? (moveAmount / entryPrice) * positionSize : 0
+  const fee = cappedPositionSize * (makerFee + takerFee) / 100
+  const grossProfit = entryPrice > 0 ? (moveAmount / entryPrice) * cappedPositionSize : 0
   const profit = grossProfit - fee
   const grossRoi = balance > 0 ? (grossProfit / balance) * 100 : 0
   const roi = balance > 0 ? (profit / balance) * 100 : 0
@@ -107,11 +111,13 @@ export default function CalculatorPage() {
     let bal = balance
     let totalRemoved = 0
     const rows: { day: number; dailyProfit: number; dailySaved: number; balance: number; totalRemoved: number; totalValue: number }[] = []
+    const maxMargin = maxPosition / leverage
     for (let d = 1; d <= Math.min(tradingDays, 1000); d++) {
       let dailyProfit = 0
       let dailySaved = 0
       for (let t = 0; t < tradesPerDay; t++) {
-        const posSize = bal * leverage
+        const tradeMargin = Math.min(bal, maxMargin)
+        const posSize = tradeMargin * leverage
         const gross = movePctDecimal * posSize - posSize * feeRate
         const removed = gross > 0 ? gross * removalRate : 0
         bal += gross - removed
@@ -122,7 +128,7 @@ export default function CalculatorPage() {
       rows.push({ day: d, dailyProfit, dailySaved, balance: bal, totalRemoved, totalValue: bal + totalRemoved })
     }
     return rows
-  }, [entryPrice, balance, leverage, moveAmount, tradesPerDay, tradingDays, makerFee, takerFee, profitRemoval])
+  }, [entryPrice, balance, leverage, moveAmount, tradesPerDay, tradingDays, makerFee, takerFee, profitRemoval, maxPosition])
 
   function handleTargetInput(val: number) {
     const move = isLong ? val - entryPrice : entryPrice - val
@@ -250,6 +256,22 @@ export default function CalculatorPage() {
                 </div>
               </div>
 
+              <div>
+                <label className="text-xs text-gray-400 block mb-1.5">Max Position ($)</label>
+                <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2.5 focus-within:border-[#22c55e] transition-colors">
+                  <span className="text-gray-500 text-sm mr-2">$</span>
+                  <input
+                    type="number"
+                    value={maxPosition}
+                    onChange={e => setMaxPosition(Math.max(1, parseFloat(e.target.value) || 1))}
+                    placeholder="1000000"
+                    className="flex-1 bg-transparent text-white text-sm outline-none min-w-0"
+                    min={1}
+                  />
+                </div>
+                <p className="text-[10px] text-gray-600 mt-1">Maximum allowed position size before margin is capped.</p>
+              </div>
+
               {/* Direction toggle */}
               <div>
                 <label className="text-xs text-gray-400 block mb-1.5">Direction</label>
@@ -340,9 +362,10 @@ export default function CalculatorPage() {
               {/* Position size */}
               <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-4">
                 <p className="text-xs text-gray-500 mb-1">Position Size</p>
-                <p className="text-2xl font-bold text-white">{fmtUSD(positionSize, true)}</p>
+                <p className="text-2xl font-bold text-white">{fmtUSD(cappedPositionSize, true)}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {fmtUSD(balance)} × {leverage}× leverage = {fmtUSD(positionSize)}
+                  {positionSize > maxPosition ? ` · capped at ${fmtUSD(maxPosition)}` : ''}
                 </p>
               </div>
 
