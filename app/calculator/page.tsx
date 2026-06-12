@@ -111,7 +111,7 @@ export default function CalculatorPage() {
     const removalRate = profitRemoval / 100
     let bal = balance
     let totalRemoved = 0
-    const rows: { day: number; dailyProfit: number; dailySaved: number; balance: number; totalRemoved: number; totalValue: number }[] = []
+    const rows: { day: number; dailyProfit: number; dailySaved: number; balance: number; tradingBalance: number; totalRemoved: number; totalValue: number }[] = []
     const maxMargin = maxPosition / leverage
     for (let d = 1; d <= Math.min(tradingDays, 1000); d++) {
       let dailyProfit = 0
@@ -126,7 +126,8 @@ export default function CalculatorPage() {
         dailyProfit += gross
         dailySaved += removed
       }
-      rows.push({ day: d, dailyProfit, dailySaved, balance: bal, totalRemoved, totalValue: bal + totalRemoved })
+      const tradingBalance = Math.min(bal, maxMargin)
+      rows.push({ day: d, dailyProfit, dailySaved, balance: bal, tradingBalance, totalRemoved, totalValue: bal + totalRemoved })
     }
     return rows
   }, [entryPrice, balance, leverage, moveAmount, tradesPerDay, tradingDays, makerFee, takerFee, profitRemoval, maxPosition])
@@ -552,8 +553,8 @@ export default function CalculatorPage() {
                     </div>
                     <div className="bg-[#060d1a] border border-[#1e3a5f] rounded-lg p-3">
                       <p className="text-xs text-gray-500 mb-1">Trading balance (day {tradingDays})</p>
-                      <p className="text-sm font-bold text-white">{fmtUSD(last.balance, true)}</p>
-                      <p className="text-xs text-gray-600 mt-0.5">{fmtXAF(last.balance)}</p>
+                      <p className="text-sm font-bold text-white">{fmtUSD(last.tradingBalance, true)}</p>
+                      <p className="text-xs text-gray-600 mt-0.5">{fmtXAF(last.tradingBalance)}</p>
                     </div>
                     <div className="bg-[#060d1a] border border-[#1e3a5f] rounded-lg p-3">
                       <p className="text-xs text-gray-500 mb-1">Total banked (day {tradingDays})</p>
@@ -615,7 +616,7 @@ export default function CalculatorPage() {
                             </td>
                             <td className="px-4 py-2 text-right text-[#22c55e] text-xs font-medium">{fmtUSD(row.dailyProfit, true)}</td>
                             {profitRemoval > 0 && <td className="px-4 py-2 text-right text-yellow-400 text-xs">{fmtUSD(row.dailySaved, true)}</td>}
-                            <td className="px-4 py-2 text-right text-white text-xs">{fmtUSD(row.balance, true)}</td>
+                            <td className="px-4 py-2 text-right text-white text-xs">{fmtUSD(row.tradingBalance, true)}</td>
                             {profitRemoval > 0 && <td className="px-4 py-2 text-right text-yellow-400 text-xs font-medium">{fmtUSD(row.totalRemoved, true)}</td>}
                             <td className="px-4 py-2 text-right text-[#22c55e] text-xs font-semibold">{fmtUSD(row.totalValue, true)}</td>
                             <td className="px-4 py-2 text-right text-gray-300 text-xs">{fmtXAF(row.totalValue)}</td>
