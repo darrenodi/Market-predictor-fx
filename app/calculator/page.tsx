@@ -84,17 +84,18 @@ export default function CalculatorPage() {
   const targetPrice = isLong ? entryPrice + moveAmount : entryPrice - moveAmount
 
   // Core calculations
-  const positionSize = balance * leverage
-  const cappedPositionSize = Math.min(positionSize, maxPosition)
-  const effectiveMargin = leverage > 0 ? cappedPositionSize / leverage : 0
+  const maxMargin = leverage > 0 ? maxPosition / leverage : 0
+  const tradingBalance = Math.min(balance, maxMargin)
+  const positionSize = tradingBalance * leverage
+  const effectiveMargin = tradingBalance
   const liqPrice = isLong
     ? entryPrice - entryPrice / leverage
     : entryPrice + entryPrice / leverage
   const liqDist = Math.abs(entryPrice - liqPrice)
   const liqDistPct = entryPrice > 0 ? (liqDist / entryPrice) * 100 : 0
   const movePct = entryPrice > 0 ? (moveAmount / entryPrice) * 100 : 0
-  const fee = cappedPositionSize * (makerFee + takerFee) / 100
-  const grossProfit = entryPrice > 0 ? (moveAmount / entryPrice) * cappedPositionSize : 0
+  const fee = positionSize * (makerFee + takerFee) / 100
+  const grossProfit = entryPrice > 0 ? (moveAmount / entryPrice) * positionSize : 0
   const profit = grossProfit - fee
   const grossRoi = balance > 0 ? (grossProfit / balance) * 100 : 0
   const roi = balance > 0 ? (profit / balance) * 100 : 0
@@ -209,7 +210,7 @@ export default function CalculatorPage() {
 
               {/* Balance */}
               <div>
-                <label className="text-xs text-gray-400 block mb-1.5">Your Balance / Margin (USD)</label>
+                <label className="text-xs text-gray-400 block mb-1.5">Total Balance (USD)</label>
                 <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2.5 focus-within:border-[#22c55e] transition-colors">
                   <span className="text-gray-500 text-sm mr-2">$</span>
                   <input
@@ -362,11 +363,18 @@ export default function CalculatorPage() {
               {/* Position size */}
               <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-4">
                 <p className="text-xs text-gray-500 mb-1">Position Size</p>
-                <p className="text-2xl font-bold text-white">{fmtUSD(cappedPositionSize, true)}</p>
+                <p className="text-2xl font-bold text-white">{fmtUSD(positionSize, true)}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {fmtUSD(balance)} × {leverage}× leverage = {fmtUSD(positionSize)}
-                  {positionSize > maxPosition ? ` · capped at ${fmtUSD(maxPosition)}` : ''}
+                  Trading balance: {fmtUSD(tradingBalance)} × {leverage}× leverage = {fmtUSD(positionSize)}
                 </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Total balance: {fmtUSD(balance)}
+                </p>
+                {balance > maxMargin && (
+                  <p className="text-xs text-yellow-400 mt-1">
+                    Trading balance capped at {fmtUSD(maxMargin)} because max position is {fmtUSD(maxPosition)}.
+                  </p>
+                )}
               </div>
 
               {/* Liquidation price */}
