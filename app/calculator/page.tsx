@@ -30,11 +30,12 @@ function fmtPct(n: number): string {
 }
 
 const XAF_RATE = 580
+const STOP_LOSS_TAKER_FEE = 0.04
 
 type AssetKey = 'BTC' | 'XAU' | 'ETH'
 const ASSETS: Record<AssetKey, { label: string; price: number; move: number; makerFee: number; takerFee: number }> = {
   BTC: { label: 'BTC',  price: 80000, move: 100, makerFee: 0.01, takerFee: 0.08 },
-  XAU: { label: 'Gold', price: 4500,  move: 3,   makerFee: 0,    takerFee: 0    },
+  XAU: { label: 'Gold', price: 4500,  move: 0.7, makerFee: 0,    takerFee: 0    },
   ETH: { label: 'ETH',  price: 2300,  move: 10,  makerFee: 0.01, takerFee: 0.08 },
 }
 
@@ -55,20 +56,30 @@ export default function CalculatorPage() {
   const [leverage, setLeverage] = useState(200)
   const [direction, setDirection] = useState<'long' | 'short'>('long')
   const [moveAmount, setMoveAmount] = useState(ASSETS.BTC.move)
+  const [stopLossAmount, setStopLossAmount] = useState(ASSETS.BTC.move)
   const [maxPosition, setMaxPosition] = useState(1_000_000)
 
   function selectAsset(key: AssetKey) {
     setAsset(key)
     setEntryPrice(ASSETS[key].price)
     setMoveAmount(ASSETS[key].move)
+    setStopLossAmount(ASSETS[key].move)
+    setMakerFee(ASSETS[key].makerFee)
+    setTakerFee(ASSETS[key].takerFee)
     if (key === 'XAU') setLeverage(40)
   }
   const [tradesPerDay, setTradesPerDay] = useState(10)
   const [tradingDays, setTradingDays] = useState(30)
-  const [makerFee, setMakerFee] = useState(0.01)
-  const [takerFee, setTakerFee] = useState(0.08)
+  const [makerFee, setMakerFee] = useState(ASSETS.BTC.makerFee)
+  const [takerFee, setTakerFee] = useState(ASSETS.BTC.takerFee)
+  const [winPercentage, setWinPercentage] = useState(100)
   const [profitRemoval, setProfitRemoval] = useState(0)
   const [checked, setChecked] = useState<Set<number>>(new Set())
+
+  function handleStopLossInput(val: number) {
+    const move = isLong ? entryPrice - val : val - entryPrice
+    setStopLossAmount(Math.max(0, move))
+  }
 
   function toggleDay(day: number) {
     setChecked(prev => {
@@ -82,6 +93,7 @@ export default function CalculatorPage() {
 
   // Target price is always derived from moveAmount + direction
   const targetPrice = isLong ? entryPrice + moveAmount : entryPrice - moveAmount
+  const stopLossPrice = isLong ? entryPrice - stopLossAmount : entryPrice + stopLossAmount
 
   // Core calculations
   const maxMargin = leverage > 0 ? maxPosition / leverage : 0
@@ -94,6 +106,7 @@ export default function CalculatorPage() {
   const liqDist = Math.abs(entryPrice - liqPrice)
   const liqDistPct = entryPrice > 0 ? (liqDist / entryPrice) * 100 : 0
   const movePct = entryPrice > 0 ? (moveAmount / entryPrice) * 100 : 0
+  const stopLossPct = entryPrice > 0 ? (stopLossAmount / entryPrice) * 100 : 0
   const fee = positionSize * (makerFee + takerFee) / 100
   const grossProfit = entryPrice > 0 ? (moveAmount / entryPrice) * positionSize : 0
   const profit = grossProfit - fee
@@ -107,8 +120,12 @@ export default function CalculatorPage() {
   const projection = useMemo(() => {
     if (entryPrice <= 0 || balance <= 0 || moveAmount <= 0) return []
     const movePctDecimal = moveAmount / entryPrice
+    const stopLossPctDecimal = stopLossAmount / entryPrice
     const feeRate = (makerFee + takerFee) / 100
+    const stopLossFeeRate = (makerFee + STOP_LOSS_TAKER_FEE) / 100
     const removalRate = profitRemoval / 100
+    const winRate = Math.min(100, Math.max(0, winPercentage)) / 100
+    const lossRate = 1 - winRate
     let bal = balance
     let totalRemoved = 0
     const rows: { day: number; dailyProfit: number; dailySaved: number; balance: number; tradingBalance: number; totalRemoved: number; totalValue: number }[] = []
@@ -119,18 +136,20 @@ export default function CalculatorPage() {
       for (let t = 0; t < tradesPerDay; t++) {
         const tradeMargin = Math.min(bal, maxMargin)
         const posSize = tradeMargin * leverage
-        const gross = movePctDecimal * posSize - posSize * feeRate
-        const removed = gross > 0 ? gross * removalRate : 0
-        bal += gross - removed
+        const winGross = movePctDecimal * posSize - posSize * feeRate
+        const lossGross = -stopLossPctDecimal * posSize - posSize * stopLossFeeRate
+        const expectedGross = winRate * winGross + lossRate * lossGross
+        const removed = expectedGross > 0 ? expectedGross * removalRate : 0
+        bal += expectedGross - removed
         totalRemoved += removed
-        dailyProfit += gross
+        dailyProfit += expectedGross
         dailySaved += removed
       }
       const tradingBalance = Math.min(bal, maxMargin)
       rows.push({ day: d, dailyProfit, dailySaved, balance: bal, tradingBalance, totalRemoved, totalValue: bal + totalRemoved })
     }
     return rows
-  }, [entryPrice, balance, leverage, moveAmount, tradesPerDay, tradingDays, makerFee, takerFee, profitRemoval, maxPosition])
+  }, [entryPrice, balance, leverage, moveAmount, stopLossAmount, tradesPerDay, tradingDays, makerFee, takerFee, profitRemoval, winPercentage, maxPosition])
 
   function handleTargetInput(val: number) {
     const move = isLong ? val - entryPrice : entryPrice - val
@@ -343,34 +362,39 @@ export default function CalculatorPage() {
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* ── RESULTS ── */}
-            <div className="space-y-3">
-
-              {/* Warning banner */}
-              {isInvalidSetup && (
-                <div className="flex items-start gap-3 bg-orange-950/60 border border-orange-600/50 rounded-xl p-4">
-                  <AlertTriangle size={16} className="text-orange-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs text-gray-400">Stop Loss</label>
+                  <span className="text-xs text-gray-500">{stopLossPct.toFixed(2)}% of entry</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <p className="text-sm font-semibold text-orange-300">Liquidated before TP</p>
-                    <p className="text-xs text-orange-400/80 mt-0.5 leading-relaxed">
-                      Your target ({fmtUSD(targetPrice)}) falls on the wrong side of your liquidation price ({fmtUSD(liqPrice)}). The position would be wiped out before the target is reached.
-                    </p>
+                    <p className="text-xs text-gray-500 mb-1.5">Stop Loss Amount ($)</p>
+                    <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2 focus-within:border-[#22c55e] transition-colors">
+                      <span className="text-gray-500 text-xs mr-1">$</span>
+                      <input
+                        type="number"
+                        value={stopLossAmount || ''}
+                        onChange={e => setStopLossAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="flex-1 bg-transparent text-white text-sm outline-none min-w-0"
+                        min={0}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1.5">Stop Loss Price ($)</p>
+                    <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2 focus-within:border-[#22c55e] transition-colors">
+                      <span className="text-gray-500 text-xs mr-1">$</span>
+                      <input
+                        type="number"
+                        value={stopLossPrice || ''}
+                        onChange={e => handleStopLossInput(parseFloat(e.target.value) || 0)}
+                        className="flex-1 bg-transparent text-white text-sm outline-none min-w-0"
+                      />
+                    </div>
                   </div>
                 </div>
-              )}
-
-              {/* Position size */}
-              <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-1">Position Size</p>
-                <p className="text-2xl font-bold text-white">{fmtUSD(positionSize, true)}</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Trading balance: {fmtUSD(tradingBalance)} × {leverage}× leverage = {fmtUSD(positionSize)}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Total balance: {fmtUSD(balance)}
-                </p>
                 {balance > maxMargin && (
                   <p className="text-xs text-yellow-400 mt-1">
                     Trading balance capped at {fmtUSD(maxMargin)} because max position is {fmtUSD(maxPosition)}.
@@ -462,7 +486,7 @@ export default function CalculatorPage() {
             <div className="bg-[#0d1627] border border-[#1e3a5f] rounded-xl p-5">
 
               <h2 className="text-base font-bold text-white mb-1">Compound Growth Projection</h2>
-              <p className="text-xs text-gray-500 mb-5">Assumes every trade hits TP at the move % above. Balance compounds after each trade.</p>
+              <p className="text-xs text-gray-500 mb-5">Assumes each trade either hits the target move or the stop loss, using win percentage and conditional stop-loss fees. Balance compounds after each trade.</p>
 
               {/* Controls */}
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
@@ -521,6 +545,21 @@ export default function CalculatorPage() {
                     <span className="text-gray-500 text-xs ml-1">%</span>
                   </div>
                   <p className="text-[10px] text-gray-600 mt-1">limit order entry/exit</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1.5">Win percentage</label>
+                  <div className="flex items-center bg-[#0a1220] border border-[#1e3a5f] rounded-lg px-3 py-2 focus-within:border-[#22c55e] transition-colors">
+                    <input
+                      type="number"
+                      value={winPercentage}
+                      onChange={e => setWinPercentage(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
+                      className="flex-1 bg-transparent text-white text-sm outline-none min-w-0"
+                      min={0}
+                      max={100}
+                    />
+                    <span className="text-gray-500 text-xs ml-1">%</span>
+                  </div>
+                  <p className="text-[10px] text-gray-600 mt-1">Probability of hitting target instead of stop loss.</p>
                 </div>
                 <div>
                   <label className="text-xs text-gray-400 block mb-1.5">Taker fee (%)</label>
